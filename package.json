@@ -1,5 +1,6 @@
 {
   "dependencies": {
-    "isomorphic-git": "^1.33.0"
+    "isomorphic-git": "^1.33.0",
+    "memfs": "^4.37.0"
   }
 }
