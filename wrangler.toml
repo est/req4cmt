@@ -1,0 +1,3 @@
+name = "req4cmt"
+main = "src/index.js"
+compatibility_date = "2022-04-05"
