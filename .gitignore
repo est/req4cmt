@@ -104,6 +104,7 @@ dist
 .tern-port
 
 # cloudflare 
-.dev.vars
+.dev.vars*
+.env*
 .wrangler/
 
