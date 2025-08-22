@@ -1,6 +1,5 @@
 {
   "dependencies": {
-    "buffer": "^6.0.3",
     "isomorphic-git": "^1.33.0"
   }
 }
