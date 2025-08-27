@@ -1,72 +1,60 @@
+// @ts-check
+
 import git from "isomorphic-git";
 import http from "isomorphic-git/http/web";
 import path from "path";
 import { Volume } from 'memfs'
 
-// Create an in-memory filesystem
-const fs = new Volume().promises
-const dir = '.'  // git work dir
+const fs = new Volume().promises  // Create an in-memory filesystem
+const dir = '.'  // in-memory git work dir
 
-async function test1(){
-	// List all the branches on a repo
-	const refs = await git.listServerRefs({
-		http, url: env.REPO, prefix: "refs/heads/", protocolVersion: 1
-	});
-	console.log(refs);
-	const oid = refs[0].oid
-	const ref = refs[0].ref
-
-
-	try{
-		const { blob } = await git.readBlob({
-			fs, dir, oid: oid,
-			filepath: env.TARGET
-		})
-		console.log(blob)
-	} catch(err) {
-		console.log(err)
-	}
+async function append_line(git_http_url, filepath, info){
+	if (! info.content ) return null
+	await git.clone({
+		fs, http, dir,
+		url: git_http_url, singleBranch: true, depth: 1
+	})
+	await fs.mkdir(path.dirname(filepath), {recursive: true})
+	await fs.appendFile(filepath, info.content)
+	await git.add({ fs, dir, filepath: filepath })
+	await git.commit({
+		fs, dir,
+		message: info.message || 'add new',
+		author: { name: info.name || 'guest', email: 'guest@example.com' },
+	})
+	const r = await git.push({
+		fs, http, dir,
+	})
+	return r
 }
 
-// Cloudflare Worker entry
-export default {
+export default {  // Cloudflare Worker entry
   async fetch(request, env, ctx) {
 	// Check if required environment variables are set
 	if (!env.REPO || !env.TARGET) {
-		return new Response('Missing required environment variables: REPO and TARGET', {
+		return Response.json({'error': 'Missing REPO or TARGET'}, {
 			status: 400,
-			headers: { 'content-type': 'text/plain' }
 		});
 	}
-	// clone the repo
-	await git.clone({
-		fs, http, dir,
-		url: env.REPO, singleBranch: true, depth: 1
-	})
-	const branches = await git.listBranches({ fs, dir });
-	const head_branch = branches.find(b => 
-		git.resolveRef({ fs, dir, ref: b }).then(commit => commit === headCommit)
-	);
-	console.info('branch=' + head_branch)
-	// await git.checkout({fs, dir, ref: head_branch, force: true});  // reset to latest
+	const data = await request.formData()
+	const cf = request.cf
+	const info = {
+		message: `add new
 
-	await fs.mkdir(path.dirname(env.TARGET), {recursive: true})
-	await fs.appendFile(env.TARGET, 'test ' + new Date().toISOString()  + '\n')
-	// console.info('content=\n'+ await fs.readFile(env.TARGET))
-	await git.add({ fs, dir, filepath: env.TARGET })
-	const c = await git.commit({
-		fs, dir,
-		message: 'test1',
-		author: { name: 'test1', email: 'test1@example.com' },
-	})
-	console.info('commit=' + c)
-
-	const r = await git.push({
-		fs, http, dir: '.',
-		remote: 'origin',
-		ref: head_branch,
-	})
-
-	return new Response(JSON.stringify(r), {'status': 200})
+asn: ${cf.asn}
+asnOrg: ${cf.asOrganization}
+botScore: ${cf.botManagement.verified_bot?'':cf.botManagement.score}
+http: ${cf.httpProtocol}
+tls: ${cf.tlsVersion}
+country: ${cf.country}
+city: ${cf.city}
+region: ${cf.region}
+timezone: ${cf.timezone}
+`,
+		name: data.get('name'),
+		content: data.get('content'),
+	}
+	const r = await append_line(env.REPO, env.TARGET, info)
+	// return Response.json(r, {'status': 200})
   }
 };
