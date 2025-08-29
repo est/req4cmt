@@ -36,25 +36,34 @@ export default {  // Cloudflare Worker entry
 			status: 400,
 		});
 	}
-	const data = await request.formData()
-	const cf = request.cf
-	const info = {
-		message: `add new
+	const ct = request.headers.get('Content-Type') || ''
+	let info = {
+		'message': 'add new',
+		'name': 'guest',
+		'content': 'guest',
+	}
+	if (request.method == 'POST' &&  (
+		ct.includes('multipart/form-data') || ct.includes('application/x-www-form-urlencoded')
+	)) {
+		const data = await request.formData()
+		const cf = request.cf
+		info = {
+			message: `add new
 
-asn: ${cf.asn}
-asnOrg: ${cf.asOrganization}
-botScore: ${cf.botManagement.verified_bot?'':cf.botManagement.score}
-http: ${cf.httpProtocol}
-tls: ${cf.tlsVersion}
-country: ${cf.country}
-city: ${cf.city}
-region: ${cf.region}
-timezone: ${cf.timezone}
+asn: ${cf.asn || ''}
+asnOrg: ${cf.asOrganization || ''}
+botScore: ${cf.botManagement.verifiedBot?-1:cf.botManagement.score}
+http: ${cf.httpProtocol || ''}
+tls: ${cf.tlsVersion || ''}
+country: ${cf.country || ''}
+city: ${cf.city || ''}
+timezone: ${cf.timezone || ''}
 `,
-		name: data.get('name'),
-		content: data.get('content'),
+			name: data.get('name'),
+			content: data.get('content'),
+		}
 	}
 	const r = await append_line(env.REPO, env.TARGET, info)
-	// return Response.json(r, {'status': 200})
+	return Response.json(r, {'status': 200})
   }
 };
