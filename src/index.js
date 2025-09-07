@@ -133,13 +133,12 @@ export default {  // Cloudflare Worker entry
 		city: cf.city,
 		timezone: cf.timezone}
 	// construct a GIT commit
-	const data = await request.formData()
-	console.log(data)
-	if (data.name || data.email || !data.content) {  // fooled lol
+	const form = await request.formData()  // or Object.fromEntries(form.entries())
+	if (form.get('name') || form.get('email') || !form.get('content')) {  // fooled lol
 		return Response.json({'error': 'yeah right'}, {status: 200	})
 	}
 
-	let info = parse_content(data.content)
+	let info = parse_content(form.get('content'))
 	info.content = JSON.stringify({
 		name: info.name, link: info.link, at: new Date().toISOString(),
 		content: info.content}) + '\n'
