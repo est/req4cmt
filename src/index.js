@@ -104,8 +104,8 @@ export default {  // Cloudflare Worker entry
 	if (!env.REPO) {
 		return Response.json({'error': 'Missing REPO'}, {status: 400});
 	}
-	// page_url as domain+path from `referer`
-	const page_url = /^https?:\/\/([^\/]+(?:\/[^?#]*)?)/.exec(request.headers.get('Referer') || '')
+	// page_url as domain+path from `referer` header
+	const page_url = /^https?:\/\/([^\/]+(?:\/[^?#]*)?)/.exec(request.headers.get('Referer') || '')?.[1]
 	if (!page_url || page_url.includes('..')) {
 		return Response.json({'error': 'bad referer. Stop!'}, {status: 400});
 	}
