@@ -83,32 +83,35 @@ function parse_content(text){
 	}
 }
 
+const CORS = {
+	'Access-Control-Allow-Origin': '*',
+	'Access-Control-Allow-Methods': 'POST',
+	'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+	'Access-Control-Allow-Credentials': 'true',
+	'Access-Control-Max-Age': '86400'
+}
+
 export default {  // Cloudflare Worker entry
   async fetch(request, env, ctx) {
 	// only POST
 	if (request.method != 'POST') {
-		return Response.json({'error': 'use POST'}, {
-			status: 405,
-		});
+		// cors for all
+		return Response.json({'error': 'use POST'}, {status: 405, headers: {
+			...CORS,
+			'Access-Control-Allow-Origin': request.headers.get('Origin') || '*'}});
 	}
 	// Check if required environment variables are set
 	if (!env.REPO) {
-		return Response.json({'error': 'Missing REPO'}, {
-			status: 400,
-		});
+		return Response.json({'error': 'Missing REPO'}, {status: 400});
 	}
 	// page_url as domain+path from `referer`
 	const ref = request.headers.get('Referer')
 	if (!ref) {
-		return Response.json({'error': 'No referer. Stop.'}, {
-			status: 400,
-		});
+		return Response.json({'error': 'No referer. Stop.'}, {status: 400});
 	}
 	const page_url = `${ref.hostname}${ref.pathname}`
 	if (page_url.includes('..')) {
-		return Response.json({'error': 'Invalid referer. Stop.'}, {
-			status: 400,
-		});
+		return Response.json({'error': 'Invalid referer. Stop.'}, {status: 400});
 	}
 	const ct = request.headers.get('Content-Type') || ''
 	if (!(
@@ -116,9 +119,7 @@ export default {  // Cloudflare Worker entry
 		ct.includes('application/x-www-form-urlencoded')
 	
 	)) {
-		return Response.json({'error': 'No form data. Stop.'}, {
-			status: 400,
-		});
+		return Response.json({'error': 'No form data. Stop.'}, {status: 400});
 	}
 
 	const cf = request.cf
@@ -134,9 +135,7 @@ export default {  // Cloudflare Worker entry
 	// construct a GIT commit
 	const data = await request.formData()
 	if (data.name || data.email || !data.content) {  // fooled lol
-		return Response.json({'error': 'yeah right'}, {
-			status: 200,
-		})
+		return Response.json({'error': 'yeah right'}, {status: 200	})
 	}
 
 	let info = parse_content(data.get('content'))
