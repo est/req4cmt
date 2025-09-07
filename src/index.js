@@ -134,11 +134,12 @@ export default {  // Cloudflare Worker entry
 		timezone: cf.timezone}
 	// construct a GIT commit
 	const data = await request.formData()
+	console.log(data)
 	if (data.name || data.email || !data.content) {  // fooled lol
 		return Response.json({'error': 'yeah right'}, {status: 200	})
 	}
 
-	let info = parse_content(data.get('content'))
+	let info = parse_content(data.content)
 	info.content = JSON.stringify({
 		name: info.name, link: info.link, at: new Date().toISOString(),
 		content: info.content}) + '\n'
