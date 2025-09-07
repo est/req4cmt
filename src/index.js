@@ -140,7 +140,7 @@ export default {  // Cloudflare Worker entry
 		content: info.content}) + '\n'
 	info.message = `new content ${info.content.length} chars by ${info.name}\n\n` + Object.entries(tail_msg).map(
 		([k, v]) => `${k}: ${v}`).join('\n')
-	const r = await append_line(env.REPO, page_url, info)
+	const r = await append_line(env.REPO, page_url + '.jsonl', info)
 	return Response.json(r, {'status': 200})
   }
 };
