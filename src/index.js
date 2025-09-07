@@ -126,7 +126,7 @@ export default {  // Cloudflare Worker entry
 	const tail_msg = {
 		asn: cf.asn,
 		asnOrg: cf.asOrganization,
-		botScore: cf.botManagement.verifiedBot ? -1 : cf.botManagement.score,
+		botScore: cf.botManagement?.verifiedBot ? -1 : cf.botManagement?.score,
 		http: cf.httpProtocol,
 		tls: cf.tlsVersion,
 		country: cf.country,
