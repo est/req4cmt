@@ -105,13 +105,9 @@ export default {  // Cloudflare Worker entry
 		return Response.json({'error': 'Missing REPO'}, {status: 400});
 	}
 	// page_url as domain+path from `referer`
-	const ref = request.headers.get('Referer')
-	if (!ref) {
-		return Response.json({'error': 'No referer. Stop.'}, {status: 400});
-	}
-	const page_url = `${ref.hostname}${ref.pathname}`
-	if (page_url.includes('..')) {
-		return Response.json({'error': 'Invalid referer. Stop.'}, {status: 400});
+	const page_url = /^https?:\/\/([^\/]+(?:\/[^?#]*)?)/.exec(request.headers.get('Referer') || '')
+	if (!page_url || page_url.includes('..')) {
+		return Response.json({'error': 'bad referer. Stop!'}, {status: 400});
 	}
 	const ct = request.headers.get('Content-Type') || ''
 	if (!(
@@ -126,7 +122,7 @@ export default {  // Cloudflare Worker entry
 	const tail_msg = {
 		asn: cf.asn,
 		asnOrg: cf.asOrganization,
-		botScore: cf.botManagement?.verifiedBot ? -1 : cf.botManagement?.score,
+		botScore: cf.botManagement?.verifiedBot ? -1 : cf.botManagement?.score || '-',
 		http: cf.httpProtocol,
 		tls: cf.tlsVersion,
 		country: cf.country,
@@ -142,7 +138,7 @@ export default {  // Cloudflare Worker entry
 	info.content = JSON.stringify({
 		name: info.name, link: info.link, at: new Date().toISOString(),
 		content: info.content}) + '\n'
-	info.message = `new content {info.content.length} chars by {info.name}\n\n` + Object.entries(tail_msg).map(
+	info.message = `new content ${info.content.length} chars by ${info.name}\n\n` + Object.entries(tail_msg).map(
 		([k, v]) => `${k}: ${v}`).join('\n')
 	const r = await append_line(env.REPO, page_url, info)
 	return Response.json(r, {'status': 200})
