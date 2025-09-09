@@ -117,7 +117,7 @@ export default {  // Cloudflare Worker entry
 	// page_url as domain+path from `referer` header
 	const page_url = /^https?:\/\/([^\/]+(?:\/[^?#]*)?)/.exec(request.headers.get('Referer') || '')?.[1]
 	if (!page_url || page_url.includes('..')) {
-		return Response.json({'error': 'bad referer. Stop!'}, {status: 400});
+		return Response.json({'error': 'bad referer. Stop!'}, {status: 400, headers: CORS});
 	}
 	const ct = request.headers.get('Content-Type') || ''
 	if (!(
@@ -125,7 +125,7 @@ export default {  // Cloudflare Worker entry
 		ct.includes('application/x-www-form-urlencoded')
 	
 	)) {
-		return Response.json({'error': 'No form data. Stop.'}, {status: 400});
+		return Response.json({'error': 'No form data. Stop.'}, {status: 400, headers: CORS});
 	}
 
 	const cf = request.cf
@@ -141,7 +141,7 @@ export default {  // Cloudflare Worker entry
 	// construct a GIT commit
 	const form = await request.formData()  // or Object.fromEntries(form.entries())
 	if (form.get('name') || form.get('email') || !form.get('content')) {  // fooled lol
-		return Response.json({'error': 'yeah right'}, {status: 200	})
+		return Response.json({'error': 'yeah right'}, {status: 200, headers: CORS})
 	}
 
 	// let info = parse_content(form.get('content'))
@@ -157,6 +157,6 @@ export default {  // Cloudflare Worker entry
 	info.message = `new content ${info.content.length} chars by ${info.name}\n\n` + Object.entries(tail_msg).map(
 		([k, v]) => `${k}: ${v}`).join('\n')
 	const r = await append_line(env.REPO, page_url + '.jsonl', info)
-	return Response.json(r, {'status': 200})
+	return Response.json(r, {'status': 200, headers: CORS})
   }
 };
