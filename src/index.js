@@ -101,10 +101,10 @@ export default {  // Cloudflare Worker entry
 		return Response.json({'error': 'Missing REPO'}, {status: 400});
 	}
 	// proxy github, only path ends with .jsonl
-	const url_path = new URL(request.url).pathname
-	if (request.method == 'GET' && url_path.endsWith('.jsonl')){
+	const req_path = new URL(request.url).pathname
+	if (request.method == 'GET' && req_path.endsWith('.jsonl')){
 		const repo_path = new URL(env.REPO).pathname.replace(/\.git$/, "")
-		const req = await fetch(`https://raw.githubusercontent.com${repo_path}/refs/heads/master${url_path}`)
+		const req = await fetch(`https://raw.githubusercontent.com${repo_path}/refs/heads/master${req_path}`)
 		return new Response(req.body, {status: req.status, headers: req.headers})
 	}
 	// only allow POST
@@ -115,7 +115,7 @@ export default {  // Cloudflare Worker entry
 			'Access-Control-Allow-Origin': request.headers.get('Origin') || '*'}});
 	}
 	// page_url as domain+path from `referer` header
-	const page_url = /^https?:\/\/([^\/]+(?:\/[^?#]*)?)/.exec(request.headers.get('Referer') || '')?.[1]
+	const page_url = req_path || /^https?:\/\/([^\/]+(?:\/[^?#]*)?)/.exec(request.headers.get('Referer') || '')?.[1]
 	if (!page_url || page_url.includes('..')) {
 		return Response.json({'error': 'bad referer. Stop!'}, {status: 400, headers: CORS});
 	}
