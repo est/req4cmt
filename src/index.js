@@ -93,16 +93,26 @@ const CORS = {
 
 export default {  // Cloudflare Worker entry
   async fetch(request, env, ctx) {
-	// only POST
+	// Check if required environment variables are set
+	if (request.method == 'OPTIONS'){
+		return new Response('', {status: 204, headers: CORS})
+	}
+	if (!env.REPO) {
+		return Response.json({'error': 'Missing REPO'}, {status: 400});
+	}
+	// proxy github, only path ends with .jsonl
+	const url_path = new URL(request.url).pathname
+	if (request.method == 'GET' && url_path.endsWith('.jsonl')){
+		const repo_path = new URL(env.REPO).pathname.replace(/\.git$/, "")
+		const req = await fetch(`https://raw.githubusercontent.com${repo_path}/refs/heads/master${url_path}`)
+		return new Response(req.body, {status: req.status, headers: req.headers})
+	}
+	// only allow POST
 	if (request.method != 'POST') {
 		// cors for all
 		return Response.json({'error': 'use POST'}, {status: 405, headers: {
 			...CORS,
 			'Access-Control-Allow-Origin': request.headers.get('Origin') || '*'}});
-	}
-	// Check if required environment variables are set
-	if (!env.REPO) {
-		return Response.json({'error': 'Missing REPO'}, {status: 400});
 	}
 	// page_url as domain+path from `referer` header
 	const page_url = /^https?:\/\/([^\/]+(?:\/[^?#]*)?)/.exec(request.headers.get('Referer') || '')?.[1]
