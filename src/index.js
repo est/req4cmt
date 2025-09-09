@@ -31,6 +31,7 @@ async function append_line(git_http_url, filepath, data){
 	return r
 }
 
+const DEFAULT_EMAIL = '?@c.est.im'
 function parse_content(text){
 	/*
 	parse these:
@@ -39,7 +40,6 @@ function parse_content(text){
 	  - name <email>
 	  - name
 	*/
-	const DEFAULT_EMAIL = '?@c.est.im'
 	let line_1st = ''
 	let content = text
 	const first_nl = text.indexOf("\n")
@@ -144,7 +144,13 @@ export default {  // Cloudflare Worker entry
 		return Response.json({'error': 'yeah right'}, {status: 200	})
 	}
 
-	let info = parse_content(form.get('content'))
+	// let info = parse_content(form.get('content'))
+	const info = {
+		content: form.get('content'),
+		name: form.get('x-name'),
+		email: /(\S+@\S+\.\S+)/.exec(form.get('x-email'))?.[1] || DEFAULT_EMAIL,
+		link: form.get('x-link'),
+	}
 	info.content = JSON.stringify({
 		name: info.name, link: info.link, at: new Date().toISOString(),
 		content: info.content}) + '\n'
