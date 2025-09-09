@@ -146,10 +146,13 @@ export default {  // Cloudflare Worker entry
 
 	// let info = parse_content(form.get('content'))
 	const info = {
-		content: form.get('content'),
+		content: (form.get('content') || '').trim(),
 		name: form.get('x-name'),
 		email: /(\S+@\S+\.\S+)/.exec(form.get('x-email'))?.[1] || DEFAULT_EMAIL,
 		link: form.get('x-link'),
+	}
+	if (!info.content){
+		return Response.json({'error': 'empty'}, {status: 200, headers: CORS})
 	}
 	info.content = JSON.stringify({
 		name: info.name, link: info.link, at: new Date().toISOString(),
