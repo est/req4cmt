@@ -62,9 +62,9 @@ async function load_cmts(api){
       } else {
         dt.appendChild(b = ne('b', {$: data.name}))
       }
-      req4cmt_thread.appendChild(dt)
+      this.appendChild(dt)
       const dd = ne('dd', {$: data.content})
-      req4cmt_thread.appendChild(dd)
+      this.appendChild(dd)
     })
 }
 
@@ -74,7 +74,7 @@ async function init(){
   const api = `https://${js_url.host}/${page_url.host}${page_url.pathname}`
   this.insertAdjacentHTML('afterend', `
 <div id="req4cmt_thread">
-  <form action="${api}" method="post" onsubmit="post_cmt();">
+  <form action="${api}" method="post">
   <input type="hidden" name="name" placeholder="guest">
   <input type="hidden" name="email" placeholder="dont@spam.me">
   <textarea name="content"></textarea>
@@ -84,7 +84,9 @@ async function init(){
   <dl>
   </dl>
 </div>`)
-  await load_cmts(req4cmt_thread.querySelector('form').action + '.jsonl')
+  const form = req4cmt_thread.querySelector('form');
+  form.addEventListener('submit', post_cmt)
+  await load_cmts(form.action + '.jsonl').bind(req4cmt_thread.querySelector('dl'))
   // add hidden inputs, avoid spam
   const submit = req4cmt_thread.querySelector('form input[type="submit"]')
   'name email link'.split(' ').forEach(k=>{
