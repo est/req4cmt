@@ -13,7 +13,7 @@ async function post_cmt() {
       body: new URLSearchParams(new FormData(evt.target))
     })
   } catch (e) {
-    console.log(e)
+    console.info('[req4cmt] failed ' + e)
     evt.submitter.value = '❌'
   }
   let rsp
@@ -38,10 +38,16 @@ function ne(tag, attr={}){
   Object.entries(attr).forEach(([k,v])=>e.setAttribute(k,v))
   return e
 }
-function load_cmts(api){
+async function load_cmts(api){
   // load from github via CF
-  fetch(api).then(x=>x.text()).then(body => {
-    body.split(/\r?\n/).forEach(line=>{
+  let body
+  try{
+    body = await (await fetch(api)).text()
+  } catch(e) {
+    console.info('[req4cmt] failed ' + e)
+    return
+  }
+  body.split(/\r?\n/).forEach(line=>{
       let data;
       try{
         data = JSON.parse(line)
@@ -60,7 +66,6 @@ function load_cmts(api){
       const dd = ne('dd', {$: data.content})
       req4cmt_thread.appendChild(dd)
     })
-  })
 }
 
 async function init(){
@@ -79,7 +84,7 @@ async function init(){
   <dl>
   </dl>
 </div>`)
-  load_cmts(req4cmt_thread.querySelector('form').action + '.jsonl')
+  await load_cmts(req4cmt_thread.querySelector('form').action + '.jsonl')
   // add hidden inputs, avoid spam
   const submit = req4cmt_thread.querySelector('form input[type="submit"]')
   'name email link'.split(' ').forEach(k=>{
