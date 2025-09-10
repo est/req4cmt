@@ -86,9 +86,9 @@ async function init(){
 </div>`)
   const form = req4cmt_thread.querySelector('form');
   form.addEventListener('submit', post_cmt)
-  await load_cmts(form.action + '.jsonl').bind(req4cmt_thread.querySelector('dl'))
+  await load_cmts.bind(req4cmt_thread.querySelector('dl'))(form.action + '.jsonl')
   // add hidden inputs, avoid spam
-  const submit = req4cmt_thread.querySelector('form input[type="submit"]')
+  const submit = form.querySelector('input[type="submit"]')
   'name email link'.split(' ').forEach(k=>{
     submit.insertAdjacentElement('beforebegin', ne('input', {name: `x-${k}`, placeholder: k}));
     submit.insertAdjacentText('beforebegin', ' ');
