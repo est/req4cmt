@@ -103,10 +103,13 @@ export default {  // Cloudflare Worker entry
 		return Response.json({'error': 'Missing REPO'}, {status: 400});
 	}
 	// proxy github, only path ends with .jsonl
-	const req_path = new URL(request.url).pathname
+	let req_path = new URL(request.url).pathname
+	if (req_path.startsWith('/')){
+		req_path = req_path.slice(1)
+	}
 	if (request.method == 'GET' && req_path.endsWith('.jsonl')){
 		const repo_path = new URL(env.REPO).pathname.replace(/\.git$/, "")
-		const req = await fetch(`https://raw.githubusercontent.com${repo_path}/refs/heads/master${req_path}`)
+		const req = await fetch(`https://raw.githubusercontent.com${repo_path}/refs/heads/master/${req_path}`)
 		const new_h = {...req.headers, ...CORS}
 		if (req.status == 200){
 			new_h['Content-Type'] = 'application/x-ndjson'
