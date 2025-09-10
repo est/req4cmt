@@ -1,3 +1,4 @@
+(function(){
 
 async function post_cmt() {
   evt = this.event
@@ -87,3 +88,5 @@ async function init(){
   load_cmts(req4cmt_thread.querySelector('form').action + '.jsonl')
 }
 document.addEventListener("DOMContentLoaded", init)
+
+})()
