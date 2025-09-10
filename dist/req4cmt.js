@@ -64,12 +64,6 @@ function load_cmts(api){
 }
 
 async function init(){
-  // add hidden inputs
-  const submit = req4cmt_thread.querySelector('form input[type="submit"]')
-  'name email link'.split(' ').forEach(k=>{
-    submit.insertAdjacentElement('beforebegin', ne('input', {name: `x-${k}`, placeholder: k}));
-    submit.insertAdjacentText('beforebegin', ' ');
-  })
   const page_url = new URL(location.href)
   const js_url = new URL(document.currentScript.src)
   const api = `https://${js_url.host}/${page_url.host}${page_url.pathname}`
@@ -86,6 +80,12 @@ async function init(){
   </dl>
 </div>`)
   load_cmts(req4cmt_thread.querySelector('form').action + '.jsonl')
+  // add hidden inputs, avoid spam
+  const submit = req4cmt_thread.querySelector('form input[type="submit"]')
+  'name email link'.split(' ').forEach(k=>{
+    submit.insertAdjacentElement('beforebegin', ne('input', {name: `x-${k}`, placeholder: k}));
+    submit.insertAdjacentText('beforebegin', ' ');
+  })
 }
 document.addEventListener("DOMContentLoaded", init)
 
