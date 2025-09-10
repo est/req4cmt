@@ -63,11 +63,11 @@ function load_cmts(api){
   })
 }
 
-async function init(){
+async function init(script){
   const page_url = new URL(location.href)
-  const js_url = new URL(document.currentScript.src)
+  const js_url = new URL(script.src)
   const api = `https://${js_url.host}/${page_url.host}${page_url.pathname}`
-  document.currentScript.insertAdjacentHTML('afterend', `
+  script.insertAdjacentHTML('afterend', `
 <div id="req4cmt_thread">
   <form action="${api}" method="post" onsubmit="post_cmt();">
   <input type="hidden" name="name" placeholder="guest">
@@ -87,6 +87,6 @@ async function init(){
     submit.insertAdjacentText('beforebegin', ' ');
   })
 }
-document.addEventListener("DOMContentLoaded", init)
+document.addEventListener("DOMContentLoaded", ()=>init(document.currentScript))
 
 })()
