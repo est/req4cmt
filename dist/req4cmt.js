@@ -28,11 +28,14 @@ async function post_cmt(evt) {
   const is_ok = req.status == 200 && !rsp.error
   evt.submitter.value = is_ok ? '✅' : '⚠️'
   if (is_ok){
-    location.assign(location.href)
+    const ta = evt.target.querySelector('textarea')
+    ta.value = ''
+    ta.textContent = 'new comments will appear eventually.\n新评论将稍后刷新'
+    setTimeout(load_cmts, 3000, evt.target)
   }
   return false;
 }
-function ne(tag, attr={}){
+function ne(tag, attr={}){ // new-element
   const e=document.createElement(tag)
   if(attr.$){
     e.textContent = attr.$
@@ -41,15 +44,17 @@ function ne(tag, attr={}){
   Object.entries(attr).forEach(([k,v])=>e.setAttribute(k,v))
   return e
 }
-async function load_cmts(api){
+async function load_cmts(form){
   // load from github via CF
   let body
   try{
-    body = await (await fetch(api, {headers: {"Accept": "application/x-ndjson"}})).text()
+    body = await (await fetch(form.action + '.jsonl', {headers: {"Accept": "application/x-ndjson"}})).text()
   } catch(e) {
     console.info('[req4cmt] failed ' + e)
     return
   }
+  const dl = form.querySelector('dl')
+  dl.replaceChildren() // clear
   body.split(/\r?\n/).forEach(line=>{
       let data;
       try{
@@ -65,9 +70,9 @@ async function load_cmts(api){
       } else {
         dt.appendChild(b = ne('b', {$: data.name}))
       }
-      this.appendChild(dt)
+      dl.appendChild(dt)
       const dd = ne('dd', {$: data.content})
-      this.appendChild(dd)
+      dl.appendChild(dd)
     })
 }
 
@@ -82,14 +87,14 @@ async function init(){
   <input type="hidden" name="email" placeholder="dont@spam.me">
   <textarea name="content"></textarea>
   <input type="submit" value="Go">
-  </form>
   <br/>
   <dl>
   </dl>
+  </form>
 </div>`)
   const form = req4cmt_thread.querySelector('form');
   form.addEventListener('submit', post_cmt)
-  await load_cmts.bind(req4cmt_thread.querySelector('dl'))(form.action + '.jsonl')
+  await load_cmts(form)
   // add hidden inputs, avoid spam
   const submit = form.querySelector('input[type="submit"]')
   'name email link'.split(' ').forEach(k=>{
