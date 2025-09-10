@@ -148,7 +148,7 @@ export default {  // Cloudflare Worker entry
 	// construct a GIT commit
 	const form = await request.formData()  // or Object.fromEntries(form.entries())
 	if (form.get('name') || form.get('email') || !form.get('content')) {  // fooled lol
-		return Response.json({'error': 'yeah right'}, {status: 200, headers: CORS})
+		return Response.json({'error': 'yeah right'}, {headers: CORS})
 	}
 
 	// let info = parse_content(form.get('content'))
@@ -159,7 +159,7 @@ export default {  // Cloudflare Worker entry
 		link: form.get('x-link'),
 	}
 	if (!info.content){
-		return Response.json({'error': 'empty'}, {status: 200, headers: CORS})
+		return Response.json({'error': 'empty'}, {headers: CORS})
 	}
 	info.content = JSON.stringify({
 		name: info.name, link: info.link, at: new Date().toISOString(),
@@ -167,6 +167,10 @@ export default {  // Cloudflare Worker entry
 	info.message = `new content ${info.content.length} chars by ${info.name}\n\n` + Object.entries(tail_msg).map(
 		([k, v]) => `${k}: ${v}`).join('\n')
 	const r = await append_line(env.REPO, page_url + '.jsonl', info)
-	return Response.json(r, {'status': 200, headers: CORS})
+	if ((request.headers.get('Accept') || '').startsWith('text/html')){
+		return Response.redirect('https://' + page_url)
+	} else {
+		return Response.json(r, {headers: CORS})
+	}
   }
 };

@@ -1,13 +1,16 @@
 (function(){
 
-async function post_cmt() {
-  evt = this.event
+async function post_cmt(evt) {
+  if (!evt){
+    evt = this.event  // called as onsubmit="xxx"
+  }
   evt.preventDefault()
   let req
   try {
     req = await fetch(evt.action, {
       method: "POST", referrerPolicy: "unsafe-url",
       headers: {
+        "Accept": "application/json",
         "Content-Type": "application/x-www-form-urlencoded",
       },
       body: new URLSearchParams(new FormData(evt.target))
@@ -42,7 +45,7 @@ async function load_cmts(api){
   // load from github via CF
   let body
   try{
-    body = await (await fetch(api)).text()
+    body = await (await fetch(api, {headers: {"Accept": "application/x-ndjson"}})).text()
   } catch(e) {
     console.info('[req4cmt] failed ' + e)
     return
