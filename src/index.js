@@ -83,7 +83,7 @@ function parse_content(text){
 	}
 }
 
-const CORS = {
+const BASE_CORS = {
 	'Access-Control-Allow-Origin': '*',
 	'Access-Control-Allow-Methods': 'POST',
 	'Access-Control-Allow-Headers': 'Content-Type, Authorization',
@@ -94,6 +94,8 @@ const CORS = {
 export default {  // Cloudflare Worker entry
   async fetch(request, env, ctx) {
 	// Check if required environment variables are set
+	const CORS = {...BASE_CORS,
+		'Access-Control-Allow-Origin': request.headers.get('Origin') || '*'}
 	if (request.method == 'OPTIONS'){
 		return new Response('', {status: 204, headers: CORS})
 	}
@@ -105,7 +107,7 @@ export default {  // Cloudflare Worker entry
 	if (request.method == 'GET' && req_path.endsWith('.jsonl')){
 		const repo_path = new URL(env.REPO).pathname.replace(/\.git$/, "")
 		const req = await fetch(`https://raw.githubusercontent.com${repo_path}/refs/heads/master${req_path}`)
-		const new_h = {...req.headers}
+		const new_h = {...req.headers, ...CORS}
 		if (req.status == 200){
 			new_h['Content-Type'] = 'application/x-ndjson'
 		}
@@ -114,9 +116,7 @@ export default {  // Cloudflare Worker entry
 	// only allow POST
 	if (request.method != 'POST') {
 		// cors for all
-		return Response.json({'error': 'use POST'}, {status: 405, headers: {
-			...CORS,
-			'Access-Control-Allow-Origin': request.headers.get('Origin') || '*'}});
+		return Response.json({'error': 'use POST'}, {status: 405, headers: CORS});
 	}
 	// page_url as domain+path from `referer` header
 	const page_url = req_path || /^https?:\/\/([^\/]+(?:\/[^?#]*)?)/.exec(request.headers.get('Referer') || '')?.[1]
