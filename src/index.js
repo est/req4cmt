@@ -31,6 +31,7 @@ async function append_line(git_http_url, filepath, data){
 	return r
 }
 
+const DEFAULT_EMAIL = '?@c.est.im'
 function parse_content(text){
 	/*
 	parse these:
@@ -39,7 +40,6 @@ function parse_content(text){
 	  - name <email>
 	  - name
 	*/
-	const DEFAULT_EMAIL = '?@c.est.im'
 	let line_1st = ''
 	let content = text
 	const first_nl = text.indexOf("\n")
@@ -83,7 +83,7 @@ function parse_content(text){
 	}
 }
 
-const CORS = {
+const BASE_CORS = {
 	'Access-Control-Allow-Origin': '*',
 	'Access-Control-Allow-Methods': 'POST',
 	'Access-Control-Allow-Headers': 'Content-Type, Authorization',
@@ -93,21 +93,38 @@ const CORS = {
 
 export default {  // Cloudflare Worker entry
   async fetch(request, env, ctx) {
-	// only POST
-	if (request.method != 'POST') {
-		// cors for all
-		return Response.json({'error': 'use POST'}, {status: 405, headers: {
-			...CORS,
-			'Access-Control-Allow-Origin': request.headers.get('Origin') || '*'}});
-	}
 	// Check if required environment variables are set
+	const CORS = {...BASE_CORS,
+		'Access-Control-Allow-Origin': request.headers.get('Origin') || '*'}
+	if (request.method == 'OPTIONS'){
+		return new Response('', {status: 204, headers: CORS})
+	}
 	if (!env.REPO) {
 		return Response.json({'error': 'Missing REPO'}, {status: 400});
 	}
+	// proxy github, only path ends with .jsonl
+	let req_path = new URL(request.url).pathname
+	if (req_path.startsWith('/')){
+		req_path = req_path.slice(1)
+	}
+	if (request.method == 'GET' && req_path.endsWith('.jsonl')){
+		const repo_path = new URL(env.REPO).pathname.replace(/\.git$/, "")
+		const req = await fetch(`https://raw.githubusercontent.com${repo_path}/refs/heads/master/${req_path}`)
+		const new_h = {...req.headers, ...CORS}
+		if (req.status == 200){
+			new_h['Content-Type'] = 'application/x-ndjson'
+		}
+		return new Response(req.body, {status: req.status, headers: new_h})
+	}
+	// only allow POST
+	if (request.method != 'POST') {
+		// cors for all
+		return Response.json({'error': 'use POST'}, {status: 405, headers: CORS});
+	}
 	// page_url as domain+path from `referer` header
-	const page_url = /^https?:\/\/([^\/]+(?:\/[^?#]*)?)/.exec(request.headers.get('Referer') || '')?.[1]
+	const page_url = req_path || /^https?:\/\/([^\/]+(?:\/[^?#]*)?)/.exec(request.headers.get('Referer') || '')?.[1]
 	if (!page_url || page_url.includes('..')) {
-		return Response.json({'error': 'bad referer. Stop!'}, {status: 400});
+		return Response.json({'error': 'bad referer. Stop!'}, {status: 400, headers: CORS});
 	}
 	const ct = request.headers.get('Content-Type') || ''
 	if (!(
@@ -115,7 +132,7 @@ export default {  // Cloudflare Worker entry
 		ct.includes('application/x-www-form-urlencoded')
 	
 	)) {
-		return Response.json({'error': 'No form data. Stop.'}, {status: 400});
+		return Response.json({'error': 'No form data. Stop.'}, {status: 400, headers: CORS});
 	}
 
 	const cf = request.cf
@@ -131,16 +148,30 @@ export default {  // Cloudflare Worker entry
 	// construct a GIT commit
 	const form = await request.formData()  // or Object.fromEntries(form.entries())
 	if (form.get('name') || form.get('email') || !form.get('content')) {  // fooled lol
-		return Response.json({'error': 'yeah right'}, {status: 200	})
+		return Response.json({'error': 'yeah right'}, {headers: CORS})
 	}
 
-	let info = parse_content(form.get('content'))
+	// let info = parse_content(form.get('content'))
+	const info = {
+		content: (form.get('content') || '').trim(),
+		name: (form.get('x-name') || '?').trim() || '?',
+		email: /(\S+@\S+\.\S+)/.exec(form.get('x-email'))?.[1] || DEFAULT_EMAIL,
+		link: form.get('x-link'),
+	}
+	console.log(page_url, info)
+	if (!info.content){
+		return Response.json({'error': 'empty'}, {headers: CORS})
+	}
 	info.content = JSON.stringify({
 		name: info.name, link: info.link, at: new Date().toISOString(),
 		content: info.content}) + '\n'
 	info.message = `new content ${info.content.length} chars by ${info.name}\n\n` + Object.entries(tail_msg).map(
 		([k, v]) => `${k}: ${v}`).join('\n')
 	const r = await append_line(env.REPO, page_url + '.jsonl', info)
-	return Response.json(r, {'status': 200})
+	if ((request.headers.get('Accept') || '').startsWith('text/html')){
+		return Response.redirect('https://' + page_url)
+	} else {
+		return Response.json(r, {headers: CORS})
+	}
   }
 };
