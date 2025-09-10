@@ -158,6 +158,7 @@ export default {  // Cloudflare Worker entry
 		email: /(\S+@\S+\.\S+)/.exec(form.get('x-email'))?.[1] || DEFAULT_EMAIL,
 		link: form.get('x-link'),
 	}
+	console.log(page_url, info)
 	if (!info.content){
 		return Response.json({'error': 'empty'}, {headers: CORS})
 	}
