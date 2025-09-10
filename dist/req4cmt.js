@@ -7,7 +7,7 @@ async function post_cmt(evt) {
   evt.preventDefault()
   let req
   try {
-    req = await fetch(evt.action, {
+    req = await fetch(evt.target.action, {
       method: "POST", referrerPolicy: "unsafe-url",
       headers: {
         "Accept": "application/json",
