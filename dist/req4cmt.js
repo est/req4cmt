@@ -81,11 +81,11 @@ async function init(){
   const js_url = new URL(this.src)
   const api = `https://${js_url.host}/${page_url.host}${page_url.pathname}`
   this.insertAdjacentHTML('afterend', `
-<div id="req4cmt_thread">
+<div id="req4cmt_thread" style="padding:0 2em 0 2em">
   <form action="${api}" method="post">
   <input type="hidden" name="name" placeholder="guest">
   <input type="hidden" name="email" placeholder="dont@spam.me">
-  <textarea name="content"></textarea>
+  <textarea name="content" style="width: 100%; height: 5em"></textarea>
   <input type="submit" value="Go">
   <br/>
   <dl>
