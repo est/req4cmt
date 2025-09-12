@@ -109,8 +109,7 @@ export default {  // Cloudflare Worker entry
 	if (request.method == 'GET' && env.REPO.includes('github.com/') && req_path.endsWith('.jsonl')){
 		const repo_path = new URL(env.REPO).pathname.replace(/\.git$/, "")
 		const req = await fetch(`https://raw.githubusercontent.com${repo_path}/refs/heads/master/${req_path}`)
-		const new_h = {...req.headers, ...CORS}
-		new_h['Content-Type'] = 'application/x-ndjson'
+		const new_h = {...Object.fromEntries(req.headers.entries()), ...CORS, "Content-Type": 'application/x-ndjson'}
 		if (req.status == 200){
 			return new Response(req.body, {headers: new_h})
 		} else {  // return empty regardless
@@ -121,6 +120,7 @@ export default {  // Cloudflare Worker entry
 		return Response.json({'error': 'req4cmt is ready. Use proper GET/POST'}, {status: 405, headers: CORS});
 	}
 	// page_url as domain+path, or try parse from `referer` header
+	// @ToDo: sanitize it
 	const page_url = req_path || /^https?:\/\/([^\/]+(?:\/[^?#]*)?)/.exec(request.headers.get('Referer') || '')?.[1]
 	if (!page_url || page_url.includes('..')) {
 		return Response.json({'error': 'bad referer. Stop!'}, {status: 400, headers: CORS});
@@ -146,8 +146,8 @@ export default {  // Cloudflare Worker entry
 	// construct a GIT commit
 	const form = await request.formData()  // or Object.fromEntries(form.entries())
 
-	// the antispam hack. bots tend to fill `name` and `name`
-	if (form.get('name') || form.get('email') || !form.get('content')) {  // fooled lol
+	// honeypot. bots tend to fill `name` and `email`
+	if (form.get('name') || form.get('email')) {  // fooled lol
 		return Response.json({'error': 'yeah right'}, {headers: CORS})
 	}
 	const form_content = (form.get('content') || '').trim()
@@ -169,7 +169,13 @@ export default {  // Cloudflare Worker entry
 		content: info.content}) + '\n'
 	info.message = `new content ${info.content.length} chars by ${info.name}\n\n` + Object.entries(tail_msg).map(
 		([k, v]) => `${k}: ${v}`).join('\n')
-	const r = await append_line(env.REPO, page_url + '.jsonl', info)
+	let r
+	try{
+		r = await append_line(env.REPO, page_url + '.jsonl', info)
+	} catch (ex) {
+		console.error('failed', ex)
+		return Response.json({'error': 'git failed'}, {status: 504, headers: CORS})
+	}
 	if ((request.headers.get('Accept') || '').startsWith('text/html')){ // noscript redir
 		return Response.redirect('https://' + page_url)
 	} else {
