@@ -117,10 +117,7 @@ export default {  // Cloudflare Worker entry
 			console.debug('timeout ' + req_url)
 		}
 		if (req?.status == 200){
-			const expires = req.headers.get('Expires')
-			if (expires){
-				new_h['expires'] = expires
-			}
+			new_h['Cache-Control'] = 'public, max-age=3'
 			return new Response(req.body, {headers: new_h})
 		} else {  // return empty regardless
 			return new Response('', {headers: new_h})
