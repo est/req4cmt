@@ -93,89 +93,90 @@ const BASE_CORS = {
 
 export default {  // Cloudflare Worker entry
   async fetch(request, env, ctx) {
-	// Check if required environment variables are set
-	const CORS = {...BASE_CORS,
+	const CORS = {...BASE_CORS,  // cors for all
 		'Access-Control-Allow-Origin': request.headers.get('Origin') || '*'}
 	if (request.method == 'OPTIONS'){
 		return new Response('', {status: 204, headers: CORS})
 	}
-	if (!env.REPO) {
+	if (!env.REPO) {  // Check if required environment variables are set
 		return Response.json({'error': 'Missing REPO'}, {status: 400});
 	}
-	// proxy github, only path ends with .jsonl
-	let req_path = new URL(request.url).pathname
+	let req_path = new URL(request.url).pathname || ''
 	if (req_path.startsWith('/')){
 		req_path = req_path.slice(1)
 	}
-	if (request.method == 'GET' && req_path.endsWith('.jsonl')){
+	// proxy github, only path ends with .jsonl
+	if (request.method == 'GET' && env.REPO.includes('github.com/') && req_path.endsWith('.jsonl')){
 		const repo_path = new URL(env.REPO).pathname.replace(/\.git$/, "")
 		const req = await fetch(`https://raw.githubusercontent.com${repo_path}/refs/heads/master/${req_path}`)
-		const new_h = {...req.headers, ...CORS}
+		const new_h = {...Object.fromEntries(req.headers.entries()), ...CORS, "Content-Type": 'application/x-ndjson'}
 		if (req.status == 200){
-			new_h['Content-Type'] = 'application/x-ndjson'
+			return new Response(req.body, {headers: new_h})
+		} else {  // return empty regardless
+			return new Response('', {headers: new_h})
 		}
-		return new Response(req.body, {status: req.status, headers: new_h})
 	}
-	// only allow POST
-	if (request.method != 'POST') {
-		// cors for all
-		return Response.json({'error': 'use POST'}, {status: 405, headers: CORS});
+	if (request.method != 'POST') {  // only allow POST
+		return Response.json({'error': 'req4cmt is ready. Use proper GET/POST'}, {status: 405, headers: CORS});
 	}
-	// page_url as domain+path from `referer` header
+	// page_url as domain+path, or try parse from `referer` header
+	// @ToDo: sanitize it
 	const page_url = req_path || /^https?:\/\/([^\/]+(?:\/[^?#]*)?)/.exec(request.headers.get('Referer') || '')?.[1]
 	if (!page_url || page_url.includes('..')) {
 		return Response.json({'error': 'bad referer. Stop!'}, {status: 400, headers: CORS});
 	}
-	const cl = request.headers.get('Content-Length')
+	const cl = request.headers.get('Content-Length')  // DoS attack
 	if (cl && parseInt(cl) > 1024 * 1024) {  // 1MB is too large. even with attachments
 		return Response.json({'error': 'body too large. Stop.'}, {status: 400, headers: CORS});
 	}
-	const ct = request.headers.get('Content-Type') || ''
+	const ct = request.headers.get('Content-Type') || ''  // consider ban the naughty IP next
 	if (!(
 		ct.includes('multipart/form-data') ||
 		ct.includes('application/x-www-form-urlencoded')
-	
 	)) {
 		return Response.json({'error': 'No form data. Stop.'}, {status: 400, headers: CORS});
 	}
 
 	const cf = request.cf
 	const tail_msg = {
-		asn: cf.asn,
-		asnOrg: cf.asOrganization,
+		asn: cf.asn, asnOrg: cf.asOrganization,
 		botScore: cf.botManagement?.verifiedBot ? -1 : cf.botManagement?.score || '-',
-		http: cf.httpProtocol,
-		tls: cf.tlsVersion,
-		country: cf.country,
-		city: cf.city,
-		timezone: cf.timezone}
+		http: cf.httpProtocol, tls: cf.tlsVersion,
+		country: cf.country, city: cf.city, timezone: cf.timezone}
 	// construct a GIT commit
 	const form = await request.formData()  // or Object.fromEntries(form.entries())
-	if (form.get('name') || form.get('email') || !form.get('content')) {  // fooled lol
+
+	// honeypot. bots tend to fill `name` and `email`
+	if (form.get('name') || form.get('email')) {  // fooled lol
 		return Response.json({'error': 'yeah right'}, {headers: CORS})
 	}
 	const form_content = (form.get('content') || '').trim()
-	// let info = parse_content(form_content)
-	if (form_content.length > 1024 * 1024) {
+	if (form_content.length > 1024 * 1024) {  // prevent over large text again
 		return Response.json({'error': 'content too large. Bye'}, {status: 400, headers: CORS});
-	}
-	const info = {
-		content: form_content,
-		name: (form.get('x-name') || '?').trim() || '?',
-		email: /(\S+@\S+\.\S+)/.exec(form.get('x-email'))?.[1] || DEFAULT_EMAIL,
-		link: form.get('x-link'),
-	}
-	console.log(page_url, info)
-	if (!info.content){
+	} else if (!form_content) {  // too short
 		return Response.json({'error': 'empty'}, {headers: CORS})
 	}
+	// let info = parse_content(form_content)
+	const info = {
+		content: form_content,
+		name: (form.get('x-name') || '?').slice(0, 200).trim() || '?',
+		email: (/(\S+@\S+\.\S+)/.exec(form.get('x-email'))?.[1] || DEFAULT_EMAIL).slice(0, 200),
+		link: (form.get('x-link') || '').slice(0, 1024 * 4),  // 4k should be enough
+	}
+	console.log(page_url, info)
 	info.content = JSON.stringify({
 		name: info.name, link: info.link, at: new Date().toISOString(),
 		content: info.content}) + '\n'
 	info.message = `new content ${info.content.length} chars by ${info.name}\n\n` + Object.entries(tail_msg).map(
 		([k, v]) => `${k}: ${v}`).join('\n')
-	const r = await append_line(env.REPO, page_url + '.jsonl', info)
-	if ((request.headers.get('Accept') || '').startsWith('text/html')){
+	let r
+	try{
+		r = await append_line(env.REPO, page_url + '.jsonl', info)
+	} catch (ex) {
+		console.error('failed', ex)
+		return Response.json({'error': 'git failed'}, {status: 504, headers: CORS})
+	}
+	if ((request.headers.get('Accept') || '').startsWith('text/html')){ // noscript redir
 		return Response.redirect('https://' + page_url)
 	} else {
 		return Response.json(r, {headers: CORS})

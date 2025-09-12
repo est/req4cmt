@@ -1,12 +1,18 @@
 # req4cmt
 
-A comment system for your blog or website, just like disqus without ads.
+A comment plugin for your blog or website, just like disqus without ads.
 
-Runs on [Cloudflare worker](https://developers.cloudflare.com/workers/). Every data is self-contained in a git repo
+It requires **NO** cookie, no signups, no login, no bullshit. Just type your comment in a `textarea` and submit.
+
+To render the `textarea`, a few kilobyes static uncompressed `req4cmt.js` is loaded.
+
+Then the .js do a `fetch` and render the comment list
+
+Runs on [Cloudflare worker](https://developers.cloudflare.com/workers/) for free. Every data is self-contained in a git repo
 
 inspired by [staticman](https://github.com/eduardoboucas/staticman) and its successor [comment-worker](https://github.com/zanechua/comment-worker/issues/4), transfer HTTP POST content, append to a JSON file, commit to a git. May even allowing additional `blob` for picture attachments in the future.
 
-Instead of using Github proprertory API, `req4cmt` use [isomorphic-git](https://isomorphic-git.org/) to speak the git-http protocol, enabling read/write to any git remote.
+Instead of using Github proprietary API, `req4cmt` use [isomorphic-git](https://isomorphic-git.org/) to speak the git-http protocol, enabling read/write to *any* git remote.
 
 评论插件。通过cf worker把内容写入到git-http远端，不依赖github api
 
@@ -21,6 +27,7 @@ Instead of using Github proprertory API, `req4cmt` use [isomorphic-git](https://
 7. embed a snippet to your HTML page. `<script defer src="https://req4cmt.myaccount.workers.dev/req4cmt.js"></script>`
 8. A new `<div>` with a `<form>` and a `<dl>` will appear for your HTML page just below the `<script>` tag
 
+The UI is too ugly? Modify the `<div id="req4cmt_thread">` inside `dist/req4cmt.js` yourself.
 
 ## Plans
 
@@ -31,3 +38,4 @@ Instead of using Github proprertory API, `req4cmt` use [isomorphic-git](https://
 - [ ] rich content formatting like `pre` or markdown
 - [ ] `at` someone for notification?
 - [ ] also as a [Github App](https://github.com/apps/req4cmt)
+- [X] limit length
