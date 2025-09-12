@@ -84,7 +84,7 @@ function parse_content(text){
 }
 
 const BASE_CORS = {
-	'Access-Control-Allow-Origin': '*',
+	// 'Access-Control-Allow-Origin': '*',
 	'Access-Control-Allow-Methods': 'POST',
 	'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 	'Access-Control-Allow-Credentials': 'true',
@@ -119,7 +119,7 @@ export default {  // Cloudflare Worker entry
 		if (req?.status == 200){
 			return new Response(req.body, {headers: Object.assign(Object.fromEntries(req.headers.entries()), new_h)})
 		} else {  // return empty regardless
-			return new Response('', {headers: {...CORS, }})
+			return new Response('', {headers: new_h})
 		}
 	}
 	if (request.method != 'POST') {  // only allow POST
