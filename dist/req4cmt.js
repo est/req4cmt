@@ -90,7 +90,7 @@ async function init(){
   <textarea name="content" style="width: 100%; height: 5em"></textarea>
   <input type="submit" value="Go">
   <br/>
-  <dl>
+  <dl style="white-space: pre-wrap;">
   </dl>
   </form>
 </div>`)

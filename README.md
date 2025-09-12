@@ -27,6 +27,7 @@ Instead of using Github proprietary API, `req4cmt` use [isomorphic-git](https://
 7. embed a snippet to your HTML page. `<script defer src="https://req4cmt.myaccount.workers.dev/req4cmt.js"></script>`
 8. A new `<div>` with a `<form>` and a `<dl>` will appear for your HTML page just below the `<script>` tag
 
+The UI is too ugly? Modify the `<div id="req4cmt_thread">` inside `dist/req4cmt.js` yourself.
 
 ## Plans
 
