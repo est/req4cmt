@@ -117,7 +117,11 @@ export default {  // Cloudflare Worker entry
 			console.debug('timeout ' + req_url)
 		}
 		if (req?.status == 200){
-			return new Response(req.body, {headers: Object.assign(Object.fromEntries(req.headers.entries()), new_h)})
+			const expires = req.headers.get('Expires')
+			if (expires){
+				new_h['expires'] = expires
+			}
+			return new Response(req.body, {headers: new_h})
 		} else {  // return empty regardless
 			return new Response('', {headers: new_h})
 		}
