@@ -110,7 +110,11 @@ export default {  // Cloudflare Worker entry
 		const repo_path = new URL(env.REPO).pathname.replace(/\.git$/, "")
 		const req_url = `https://raw.githubusercontent.com${repo_path}/refs/heads/master/${req_path}`
 		let req
-		const new_h = {...CORS, "Content-Type": 'application/x-ndjson'}
+		const new_h = {
+			...CORS,
+			"Content-Type": 'application/x-ndjson',
+			'Content-Disposition': 'inline',
+			'X-Content-Type-Options': 'nosniff'}
 		try{
 			req = await fetch(req_url)
 		} catch(e) {
