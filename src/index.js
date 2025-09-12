@@ -126,6 +126,10 @@ export default {  // Cloudflare Worker entry
 	if (!page_url || page_url.includes('..')) {
 		return Response.json({'error': 'bad referer. Stop!'}, {status: 400, headers: CORS});
 	}
+	const cl = request.headers.get('Content-Length')
+	if (cl && parseInt(cl) > 1024 * 1024) {  // 1MB is too large. even with attachments
+		return Response.json({'error': 'body too large. Stop.'}, {status: 400, headers: CORS});
+	}
 	const ct = request.headers.get('Content-Type') || ''
 	if (!(
 		ct.includes('multipart/form-data') ||
@@ -150,10 +154,13 @@ export default {  // Cloudflare Worker entry
 	if (form.get('name') || form.get('email') || !form.get('content')) {  // fooled lol
 		return Response.json({'error': 'yeah right'}, {headers: CORS})
 	}
-
-	// let info = parse_content(form.get('content'))
+	const form_content = (form.get('content') || '').trim()
+	// let info = parse_content(form_content)
+	if (form_content.length > 1024 * 1024) {
+		return Response.json({'error': 'content too large. Bye'}, {status: 400, headers: CORS});
+	}
 	const info = {
-		content: (form.get('content') || '').trim(),
+		content: form_content,
 		name: (form.get('x-name') || '?').trim() || '?',
 		email: /(\S+@\S+\.\S+)/.exec(form.get('x-email'))?.[1] || DEFAULT_EMAIL,
 		link: form.get('x-link'),
