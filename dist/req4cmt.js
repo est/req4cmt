@@ -5,6 +5,7 @@ async function post_cmt(evt) {
     evt = this.event  // called as onsubmit="xxx"
   }
   evt.preventDefault()
+  evt.stopPropagation()
   let req
   try {
     req = await fetch(evt.target.action, {
@@ -21,7 +22,7 @@ async function post_cmt(evt) {
   }
   let rsp
   try {
-    rsp = await r.json()
+    rsp = await req.json()
   } catch (e) {
     rsp = {}
   }
@@ -63,7 +64,8 @@ async function load_cmts(form){
         return
       }
       const dt = ne('dt')
-      dt.appendChild(ne('small', {$: new Date(data.at).toLocaleString('en-CA',{hour12: false}).replace(',', '')}))
+      dt.appendChild(ne('small', {$: new Date(data.at).toLocaleString(
+        'en-CA',{hour12: false}).replace(',', '')}))  // easy ISO format
       dt.appendChild(document.createTextNode(' '))
       if (data.link){
         dt.appendChild(ne('a', {href: data.link, $: data.name}))
