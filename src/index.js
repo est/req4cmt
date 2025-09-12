@@ -108,12 +108,18 @@ export default {  // Cloudflare Worker entry
 	// proxy github, only path ends with .jsonl
 	if (request.method == 'GET' && env.REPO.includes('github.com/') && req_path.endsWith('.jsonl')){
 		const repo_path = new URL(env.REPO).pathname.replace(/\.git$/, "")
-		const req = await fetch(`https://raw.githubusercontent.com${repo_path}/refs/heads/master/${req_path}`)
-		const new_h = {...Object.fromEntries(req.headers.entries()), ...CORS, "Content-Type": 'application/x-ndjson'}
-		if (req.status == 200){
-			return new Response(req.body, {headers: new_h})
+		const req_url = `https://raw.githubusercontent.com${repo_path}/refs/heads/master/${req_path}`
+		let req
+		const new_h = {...CORS, "Content-Type": 'application/x-ndjson'}
+		try{
+			req = await fetch(req_url)
+		} catch(e) {
+			console.debug('timeout ' + req_url)
+		}
+		if (req?.status == 200){
+			return new Response(req.body, {headers: Object.assign(Object.fromEntries(req.headers.entries()), new_h)})
 		} else {  // return empty regardless
-			return new Response('', {headers: new_h})
+			return new Response('', {headers: {...CORS, }})
 		}
 	}
 	if (request.method != 'POST') {  // only allow POST
