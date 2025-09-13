@@ -30,7 +30,7 @@ async function append_line(git_http_url, filepath, data){
 	await fs.mkdir(path.dirname(filepath), {recursive: true})
 	await fs.appendFile(filepath, data.content)
 	const t1 = await git.readTree({ fs, dir, oid: await git.resolveRef({ fs, dir, ref: 'HEAD' })})
-	t1.forEach(entry => console.log(entry.path));
+	t1.tree.forEach(entry => console.log(entry.path));
 	await git.add({ fs, dir, filepath })
 	await git.commit({
 		fs, dir,
@@ -41,7 +41,7 @@ async function append_line(git_http_url, filepath, data){
 	})
 
 	const t2 = await git.readTree({ fs, dir, oid: await git.resolveRef({ fs, dir, ref: 'HEAD' })})
-	t2.forEach(entry => console.log(entry.path));
+	t2.tree.forEach(entry => console.log(entry.path));
 	
 	/*
 	const stagedFiles = await git.statusMatrix({ fs, dir });
