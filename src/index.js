@@ -135,12 +135,19 @@ export default {  // Cloudflare Worker entry
 			}
 		} else {
 			await git_checkout(env.REPO, req_path)
-			fs.readFile(req_path, 'utf8', (err, data) => {
-				return new Response(data || '', {headers: new_h})
+			let data = ''
+			try{
+				data = await fs.readFile(req_path, 'utf8')
+			} catch (ex) {
+				if (ex.code != 'ENOENT'){
+					console.info(ex)
+				}
 			}
+			return new Response(data, {headers: new_h})
 		}
 	}
 	if (request.method != 'POST') {  // only allow POST
+		// console.debug(request.method + ' ' + req_path)
 		return Response.json({'error': 'req4cmt is ready. Use proper GET/POST'}, {status: 405, headers: CORS});
 	}
 	// page_url as domain+path, or try parse from `referer` header
