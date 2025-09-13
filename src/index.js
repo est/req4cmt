@@ -10,10 +10,12 @@ const fs = new Volume().promises  // Create an in-memory filesystem
 
 const dir = '.'  // in-memory git work dir
 
-async function git_checkout(git_http_url, filepath){
+async function git_checkout(git_http_url, filepath){	
+	// fast partial clone + single file checkout magic
 	await git.clone({
 		fs, http, dir,
-		url: git_http_url, singleBranch: true, depth: 1, noCheckout: true,
+		url: git_http_url, singleBranch: true, noTags: true,
+		depth: 1, noCheckout: true,
 	})
 	await git.checkout({
 		fs, dir,
@@ -28,7 +30,7 @@ async function append_line(git_http_url, filepath, data){
 	if (! data.content ) return null
 	await git_checkout(git_http_url, filepath)
 	await fs.appendFile(filepath, data.content)
-	await git.add({ fs, dir, filepath: filepath })
+	await git.add({ fs, dir, filepath })
 	await git.commit({
 		fs, dir,
 		message: data.message || 'add new',
@@ -36,6 +38,14 @@ async function append_line(git_http_url, filepath, data){
 			name: data.name || 'guest',
 			email: data.email || 'guest@example.com' },
 	})
+	const stagedFiles = await git.statusMatrix({ fs, dir });
+	/*
+	for (const [filepath, head, workdir, stage] of stagedFiles) {
+		if (head !== stage) {
+			const diff = await git.diff({ fs, dir, filepath, staged: true });
+			console.log(`Diff for ${filepath}:\n${diff}`);
+		}
+	}*/
 	const r = await git.push({
 		fs, http, dir,
 	})
