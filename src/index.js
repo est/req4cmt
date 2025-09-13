@@ -17,8 +17,8 @@ async function git_checkout(git_http_url, filepath){
 		url: git_http_url, singleBranch: true, noTags: true,
 		depth: 1, noCheckout: true,
 	})
-	// const oid = await git.resolveRef({ fs, dir, ref: 'HEAD' })
-	await git.readTree({fs, dir, oid: 'HEAD'}) // important!
+	const oid = await git.resolveRef({ fs, dir, ref: 'HEAD' })
+	await git.readTree({fs, dir, oid}) // important!
 	await git.checkout({
 		fs, dir,
 		filepaths: [filepath], force: true,
