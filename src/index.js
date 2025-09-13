@@ -7,23 +7,30 @@ import path from "path";
 import { Volume } from 'memfs'
 
 const fs = new Volume().promises  // Create an in-memory filesystem
+
 const dir = '.'  // in-memory git work dir
+
+async function git_checkout(git_http_url, filepath){	
+	await git.clone({
+		fs, http, dir, url: git_http_url,
+		depth: 1, singleBranch: true, noTags: true, noCheckout: true
+	})
+	await git.checkout({fs, dir, force: true})
+}
 
 async function append_line(git_http_url, filepath, data){
 	if (! data.content ) return null
-	await git.clone({
-		fs, http, dir,
-		url: git_http_url, singleBranch: true, depth: 1
-	})
+	await git_checkout(git_http_url, filepath)
 	await fs.mkdir(path.dirname(filepath), {recursive: true})
 	await fs.appendFile(filepath, data.content)
-	await git.add({ fs, dir, filepath: filepath })
+	await git.add({fs, dir, filepath})
 	await git.commit({
 		fs, dir,
 		message: data.message || 'add new',
 		author: {
 			name: data.name || 'guest',
-			email: data.email || 'guest@example.com' },
+			email: data.email || 'guest@example.com'
+		},
 	})
 	const r = await git.push({
 		fs, http, dir,
@@ -84,7 +91,7 @@ function parse_content(text){
 }
 
 const BASE_CORS = {
-	'Access-Control-Allow-Origin': '*',
+	// 'Access-Control-Allow-Origin': '*',
 	'Access-Control-Allow-Methods': 'POST',
 	'Access-Control-Allow-Headers': 'Content-Type, Authorization',
 	'Access-Control-Allow-Credentials': 'true',
@@ -101,22 +108,44 @@ export default {  // Cloudflare Worker entry
 	if (!env.REPO) {  // Check if required environment variables are set
 		return Response.json({'error': 'Missing REPO'}, {status: 400});
 	}
-	let req_path = new URL(request.url).pathname || ''
-	if (req_path.startsWith('/')){
-		req_path = req_path.slice(1)
-	}
-	// proxy github, only path ends with .jsonl
-	if (request.method == 'GET' && env.REPO.includes('github.com/') && req_path.endsWith('.jsonl')){
-		const repo_path = new URL(env.REPO).pathname.replace(/\.git$/, "")
-		const req = await fetch(`https://raw.githubusercontent.com${repo_path}/refs/heads/master/${req_path}`)
-		const new_h = {...Object.fromEntries(req.headers.entries()), ...CORS, "Content-Type": 'application/x-ndjson'}
-		if (req.status == 200){
-			return new Response(req.body, {headers: new_h})
-		} else {  // return empty regardless
-			return new Response('', {headers: new_h})
+	let req_path = /^\/+(\S+)$/.exec(new URL(request.url).pathname)?.[1] || ''
+	const new_h = {
+		...CORS,
+		"Content-Type": 'application/x-ndjson',
+		'Content-Disposition': 'inline',
+		'X-Content-Type-Options': 'nosniff'}
+	// only path ends with .jsonl
+	if (request.method == 'GET' && req_path.endsWith('.jsonl')){
+		if (env.REPO.includes('github.com/')) {  // proxy github
+			const repo_path = new URL(env.REPO).pathname.replace(/\.git$/, "")
+			const req_url = `https://raw.githubusercontent.com${repo_path}/refs/heads/master/${req_path}`
+			let req
+			try{
+				req = await fetch(req_url)
+			} catch(e) {
+				console.log('timeout ' + req_url)
+			}
+			if (req?.status == 200){
+				new_h['Cache-Control'] = 'public, max-age=3'
+				return new Response(req.body, {headers: new_h})
+			} else {  // return empty regardless
+				return new Response('', {headers: new_h})
+			}
+		} else {  // partial clone and return
+			await git_checkout(env.REPO, req_path)
+			let data = ''
+			try{
+				data = await fs.readFile(req_path, 'utf8')
+			} catch (ex) {
+				if (ex.code != 'ENOENT'){
+					console.log('partial clone failed ', ex)
+				}
+			}
+			return new Response(data, {headers: new_h})
 		}
 	}
 	if (request.method != 'POST') {  // only allow POST
+		// console.log(request.method + ' ' + req_path)
 		return Response.json({'error': 'req4cmt is ready. Use proper GET/POST'}, {status: 405, headers: CORS});
 	}
 	// page_url as domain+path, or try parse from `referer` header
@@ -139,10 +168,10 @@ export default {  // Cloudflare Worker entry
 
 	const cf = request.cf
 	const tail_msg = {
-		asn: cf.asn, asnOrg: cf.asOrganization,
+		asn: cf.asn, asnOrg: cf.asOrganization, lang: request.headers.get('accept-language'),
 		botScore: cf.botManagement?.verifiedBot ? -1 : cf.botManagement?.score || '-',
 		http: cf.httpProtocol, tls: cf.tlsVersion,
-		country: cf.country, city: cf.city, timezone: cf.timezone}
+		country: cf.country, region: cf.region, city: cf.city, timezone: cf.timezone}
 	// construct a GIT commit
 	const form = await request.formData()  // or Object.fromEntries(form.entries())
 
@@ -173,7 +202,7 @@ export default {  // Cloudflare Worker entry
 	try{
 		r = await append_line(env.REPO, page_url + '.jsonl', info)
 	} catch (ex) {
-		console.error('failed', ex)
+		console.log('failed', ex)
 		return Response.json({'error': 'git failed'}, {status: 504, headers: CORS})
 	}
 	if ((request.headers.get('Accept') || '').startsWith('text/html')){ // noscript redir

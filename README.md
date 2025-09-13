@@ -39,3 +39,14 @@ The UI is too ugly? Modify the `<div id="req4cmt_thread">` inside `dist/req4cmt.
 - [ ] `at` someone for notification?
 - [ ] also as a [Github App](https://github.com/apps/req4cmt)
 - [X] limit length
+- [X] 20250912 git-http fetch file for private repos, replace github download.
+
+## failures and non-goals
+
+### partial fetch 2025-09-13
+
+failed attemped to implement. isomorphic-git does not handle single file checkout well. When `.commit()` Other files gets deleted.
+
+Also the `git.clone()` at minimal would read full blobs of one commit.
+
+Scaling might be an issue in the future.
