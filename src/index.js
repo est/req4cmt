@@ -20,6 +20,8 @@ async function git_checkout(git_http_url, filepath){
 		filepaths: [filepath], force: true,
 	})
 	await fs.mkdir(path.dirname(filepath), {recursive: true})
+	const oid = await git.resolveRef({ fs, dir, ref: 'HEAD' })
+	await git.readTree({fs, dir, oid}) // important!
 }
 
 async function append_line(git_http_url, filepath, data){
