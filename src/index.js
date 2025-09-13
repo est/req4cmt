@@ -32,6 +32,8 @@ async function append_line(git_http_url, filepath, data){
 	await fs.appendFile(filepath, data.content)
 	// const t1 = await git.readTree({ fs, dir, oid: await git.resolveRef({ fs, dir, ref: 'HEAD' })})
 	await git.add({ fs, dir, filepath })
+	const t2 = await git.readTree({ fs, dir, oid: await git.resolveRef({ fs, dir, ref: 'HEAD' })})
+	console.debug(t2.tree.map(o=>o.path).join('\n'));
 	await git.commit({
 		fs, dir,
 		message: data.message || 'add new',
@@ -39,9 +41,8 @@ async function append_line(git_http_url, filepath, data){
 			name: data.name || 'guest',
 			email: data.email || 'guest@example.com' },
 	})
-
-	const t2 = await git.readTree({ fs, dir, oid: await git.resolveRef({ fs, dir, ref: 'HEAD' })})
-	console.debug(t2.tree.map(o=>o.path).join('\n'));
+	const t3 = await git.readTree({ fs, dir, oid: await git.resolveRef({ fs, dir, ref: 'HEAD' })})
+	console.debug(t3.tree.map(o=>o.path).join('\n'));
 	
 	/*
 	const stagedFiles = await git.statusMatrix({ fs, dir });
