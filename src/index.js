@@ -35,7 +35,7 @@ async function append_line(git_http_url, filepath, data){
 	const t2 = await git.readTree({ fs, dir, oid: await git.resolveRef({ fs, dir, ref: 'HEAD' })})
 	console.debug(t2.tree.map(o=>o.path).join('\n'));
 	await git.commit({
-		fs, dir,
+		fs, dir, tree: t2.oid,
 		message: data.message || 'add new',
 		author: {
 			name: data.name || 'guest',
