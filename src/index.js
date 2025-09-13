@@ -17,7 +17,8 @@ async function git_checkout(git_http_url, filepath){
 		depth: 1, noCheckout: true, singleBranch: true, noTags: true,
 	})
 	const oid = await git.resolveRef({ fs, dir, ref: 'HEAD' })
-	await git.readTree({fs, dir, oid}) // important!
+	const ht = await git.readTree({fs, dir, oid}) // important!
+	console.debug(ht.tree.map(o=>o.path).join('\n'));
 	await git.checkout({
 		fs, dir,
 		filepaths: [filepath], force: true,
@@ -29,8 +30,7 @@ async function append_line(git_http_url, filepath, data){
 	await git_checkout(git_http_url, filepath)
 	await fs.mkdir(path.dirname(filepath), {recursive: true})
 	await fs.appendFile(filepath, data.content)
-	const t1 = await git.readTree({ fs, dir, oid: await git.resolveRef({ fs, dir, ref: 'HEAD' })})
-	t1.tree.forEach(entry => console.log(entry.path));
+	// const t1 = await git.readTree({ fs, dir, oid: await git.resolveRef({ fs, dir, ref: 'HEAD' })})
 	await git.add({ fs, dir, filepath })
 	await git.commit({
 		fs, dir,
@@ -41,7 +41,7 @@ async function append_line(git_http_url, filepath, data){
 	})
 
 	const t2 = await git.readTree({ fs, dir, oid: await git.resolveRef({ fs, dir, ref: 'HEAD' })})
-	t2.tree.forEach(entry => console.log(entry.path));
+	console.debug(t2.tree.map(o=>o.path).join('\n'));
 	
 	/*
 	const stagedFiles = await git.statusMatrix({ fs, dir });
