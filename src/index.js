@@ -31,19 +31,22 @@ async function append_line(git_http_url, filepath, data){
 	const ht = await git_checkout(git_http_url, filepath)
 	await fs.mkdir(path.dirname(filepath), {recursive: true})
 	await fs.appendFile(filepath, data.content)
-	console.debug('before checkout()', ht.tree.map(o=>o.path).join('\n'));
+	console.debug('before checkout()', ht.oid, ht.tree.map(o=>o.path).join('\n'));
 	await git.add({ fs, dir, filepath })
 	const t2 = await git.readTree({ fs, dir, oid: await git.resolveRef({ fs, dir, ref: 'HEAD' })})
-	console.debug('after add', t2.tree.map(o=>o.path).join('\n'));
-	await git.commit({
-		fs, dir, tree: ht.oid,
+	console.debug('after add', t2.oid, t2.tree.map(o=>o.path).join('\n'));
+	const nt = await git.writeTree({fs, dir, tree: t2.tree})
+	console.debug('before commit', nt, await git.listFiles({ fs, dir }))
+	const sha1 = await git.commit({
+		fs, dir, tree: nt,
 		message: data.message || 'add new',
 		author: {
 			name: data.name || 'guest',
 			email: data.email || 'guest@example.com' },
 	})
 	const t3 = await git.readTree({ fs, dir, oid: await git.resolveRef({ fs, dir, ref: 'HEAD' })})
-	console.debug('after commit', t3.tree.map(o=>o.path).join('\n'));
+	console.debug('after commit', sha1, t3.tree.map(o=>o.path).join('\n'));
+	console.debug('after commit', await git.listFiles({ fs, dir }))
 	
 	/*
 	const stagedFiles = await git.statusMatrix({ fs, dir });
@@ -53,7 +56,7 @@ async function append_line(git_http_url, filepath, data){
 			console.log(`Diff for ${filepath}:\n${diff}`);
 		}
 	}*/
-	// return
+	return
 	const r = await git.push({
 		fs, http, dir,
 	})
