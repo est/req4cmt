@@ -11,52 +11,27 @@ const fs = new Volume().promises  // Create an in-memory filesystem
 const dir = '.'  // in-memory git work dir
 
 async function git_checkout(git_http_url, filepath){	
-	// fast partial clone + single file checkout magic
 	await git.clone({
 		fs, http, dir, url: git_http_url,
-		depth: 1, noCheckout: true, singleBranch: true, noTags: true,
+		depth: 1, singleBranch: true, noTags: true, noCheckout: true
 	})
-	const oid = await git.resolveRef({ fs, dir, ref: 'HEAD' })
-	const ht = await git.readTree({fs, dir, oid}) // important!
-	console.debug(ht.tree.map(o=>o.path).join('\n'));
-	await git.checkout({
-		fs, dir,
-		filepaths: [filepath], force: true,
-	})
-	return ht
+	await git.checkout({fs, dir, force: true})
 }
 
 async function append_line(git_http_url, filepath, data){
 	if (! data.content ) return null
-	const ht = await git_checkout(git_http_url, filepath)
+	await git_checkout(git_http_url, filepath)
 	await fs.mkdir(path.dirname(filepath), {recursive: true})
 	await fs.appendFile(filepath, data.content)
-	console.debug('before checkout()', ht.oid, ht.tree.map(o=>o.path).join('\n'));
-	await git.add({ fs, dir, filepath })
-	const t2 = await git.readTree({ fs, dir, oid: await git.resolveRef({ fs, dir, ref: 'HEAD' })})
-	console.debug('after add', t2.oid, t2.tree.map(o=>o.path).join('\n'));
-	const nt = await git.writeTree({fs, dir, tree: t2.tree})
-	console.debug('before commit', nt, await git.listFiles({ fs, dir }))
-	const sha1 = await git.commit({
-		fs, dir, tree: nt,
+	await git.add({fs, dir, filepath})
+	await git.commit({
+		fs, dir,
 		message: data.message || 'add new',
 		author: {
 			name: data.name || 'guest',
-			email: data.email || 'guest@example.com' },
+			email: data.email || 'guest@example.com'
+		},
 	})
-	const t3 = await git.readTree({ fs, dir, oid: await git.resolveRef({ fs, dir, ref: 'HEAD' })})
-	console.debug('after commit', sha1, t3.tree.map(o=>o.path).join('\n'));
-	console.debug('after commit', await git.listFiles({ fs, dir }))
-	
-	/*
-	const stagedFiles = await git.statusMatrix({ fs, dir });
-	for (const [filepath, head, workdir, stage] of stagedFiles) {
-		if (head !== stage) {
-			const diff = await git.diff({ fs, dir, filepath, staged: true });
-			console.log(`Diff for ${filepath}:\n${diff}`);
-		}
-	}*/
-	return
 	const r = await git.push({
 		fs, http, dir,
 	})
@@ -148,7 +123,7 @@ export default {  // Cloudflare Worker entry
 			try{
 				req = await fetch(req_url)
 			} catch(e) {
-				console.debug('timeout ' + req_url)
+				console.log('timeout ' + req_url)
 			}
 			if (req?.status == 200){
 				new_h['Cache-Control'] = 'public, max-age=3'
@@ -156,21 +131,21 @@ export default {  // Cloudflare Worker entry
 			} else {  // return empty regardless
 				return new Response('', {headers: new_h})
 			}
-		} else {
+		} else {  // partial clone and return
 			await git_checkout(env.REPO, req_path)
 			let data = ''
 			try{
 				data = await fs.readFile(req_path, 'utf8')
 			} catch (ex) {
 				if (ex.code != 'ENOENT'){
-					console.info(ex)
+					console.log('partial clone failed ', ex)
 				}
 			}
 			return new Response(data, {headers: new_h})
 		}
 	}
 	if (request.method != 'POST') {  // only allow POST
-		// console.debug(request.method + ' ' + req_path)
+		// console.log(request.method + ' ' + req_path)
 		return Response.json({'error': 'req4cmt is ready. Use proper GET/POST'}, {status: 405, headers: CORS});
 	}
 	// page_url as domain+path, or try parse from `referer` header
@@ -193,10 +168,10 @@ export default {  // Cloudflare Worker entry
 
 	const cf = request.cf
 	const tail_msg = {
-		asn: cf.asn, asnOrg: cf.asOrganization,
+		asn: cf.asn, asnOrg: cf.asOrganization, lang: request.headers.get('accept-language'),
 		botScore: cf.botManagement?.verifiedBot ? -1 : cf.botManagement?.score || '-',
 		http: cf.httpProtocol, tls: cf.tlsVersion,
-		country: cf.country, city: cf.city, timezone: cf.timezone}
+		country: cf.country, region: cf.region, city: cf.city, timezone: cf.timezone}
 	// construct a GIT commit
 	const form = await request.formData()  // or Object.fromEntries(form.entries())
 
@@ -224,12 +199,12 @@ export default {  // Cloudflare Worker entry
 	info.message = `new content ${info.content.length} chars by ${info.name}\n\n` + Object.entries(tail_msg).map(
 		([k, v]) => `${k}: ${v}`).join('\n')
 	let r
-	// try{
-	r = await append_line(env.REPO, page_url + '.jsonl', info)
-	// } catch (ex) {
-		// console.error('failed', ex)
+	try{
+		r = await append_line(env.REPO, page_url + '.jsonl', info)
+	} catch (ex) {
+		console.log('failed', ex)
 		return Response.json({'error': 'git failed'}, {status: 504, headers: CORS})
-	// }
+	}
 	if ((request.headers.get('Accept') || '').startsWith('text/html')){ // noscript redir
 		return Response.redirect('https://' + page_url)
 	} else {
