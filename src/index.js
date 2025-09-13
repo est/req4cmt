@@ -7,15 +7,24 @@ import path from "path";
 import { Volume } from 'memfs'
 
 const fs = new Volume().promises  // Create an in-memory filesystem
+
 const dir = '.'  // in-memory git work dir
+
+async function git_checkout(git_http_url, filepath){
+	await git.clone({
+		fs, http, dir,
+		url: git_http_url, singleBranch: true, depth: 1, noCheckout: true,
+	})
+	await git.checkout({
+		fs, dir,
+		filepaths: [filepath], force: true,
+	})
+	await fs.mkdir(path.dirname(filepath), {recursive: true})
+}
 
 async function append_line(git_http_url, filepath, data){
 	if (! data.content ) return null
-	await git.clone({
-		fs, http, dir,
-		url: git_http_url, singleBranch: true, depth: 1
-	})
-	await fs.mkdir(path.dirname(filepath), {recursive: true})
+	await git_checkout(git_http_url, filepath)
 	await fs.appendFile(filepath, data.content)
 	await git.add({ fs, dir, filepath: filepath })
 	await git.commit({
@@ -101,30 +110,34 @@ export default {  // Cloudflare Worker entry
 	if (!env.REPO) {  // Check if required environment variables are set
 		return Response.json({'error': 'Missing REPO'}, {status: 400});
 	}
-	let req_path = new URL(request.url).pathname || ''
-	if (req_path.startsWith('/')){
-		req_path = req_path.slice(1)
-	}
-	// proxy github, only path ends with .jsonl
-	if (request.method == 'GET' && env.REPO.includes('github.com/') && req_path.endsWith('.jsonl')){
-		const repo_path = new URL(env.REPO).pathname.replace(/\.git$/, "")
-		const req_url = `https://raw.githubusercontent.com${repo_path}/refs/heads/master/${req_path}`
-		let req
-		const new_h = {
-			...CORS,
-			"Content-Type": 'application/x-ndjson',
-			'Content-Disposition': 'inline',
-			'X-Content-Type-Options': 'nosniff'}
-		try{
-			req = await fetch(req_url)
-		} catch(e) {
-			console.debug('timeout ' + req_url)
-		}
-		if (req?.status == 200){
-			new_h['Cache-Control'] = 'public, max-age=3'
-			return new Response(req.body, {headers: new_h})
-		} else {  // return empty regardless
-			return new Response('', {headers: new_h})
+	let req_path = /^\/+(\S+)$/.exec(new URL(request.url).pathname)?.[1] || ''
+	const new_h = {
+		...CORS,
+		"Content-Type": 'application/x-ndjson',
+		'Content-Disposition': 'inline',
+		'X-Content-Type-Options': 'nosniff'}
+	// only path ends with .jsonl
+	if (request.method == 'GET' && req_path.endsWith('.jsonl')){
+		if (env.REPO.includes('github.com/')) {  // proxy github
+			const repo_path = new URL(env.REPO).pathname.replace(/\.git$/, "")
+			const req_url = `https://raw.githubusercontent.com${repo_path}/refs/heads/master/${req_path}`
+			let req
+			try{
+				req = await fetch(req_url)
+			} catch(e) {
+				console.debug('timeout ' + req_url)
+			}
+			if (req?.status == 200){
+				new_h['Cache-Control'] = 'public, max-age=3'
+				return new Response(req.body, {headers: new_h})
+			} else {  // return empty regardless
+				return new Response('', {headers: new_h})
+			}
+		} else {
+			await git_checkout(env.REPO, req_path)
+			fs.readFile(req_path, 'utf8', (err, data) => {
+				return new Response(data || '', {headers: new_h})
+			}
 		}
 	}
 	if (request.method != 'POST') {  // only allow POST
