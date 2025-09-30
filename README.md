@@ -16,6 +16,10 @@ Instead of using Github proprietary API, `req4cmt` use [isomorphic-git](https://
 
 评论插件。通过cf worker把内容写入到git-http远端，不依赖github api
 
+## Demo
+
+Visit my blog: <https://blog.est.im/2025/stdout-07>
+
 ## Setup
 
 1. fork the repo and deploy to Cloudflare Worker. Assign a domain or use the default like `req4cmt.myaccount.workers.dev`
