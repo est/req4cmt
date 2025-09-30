@@ -57,46 +57,48 @@ Also the `git.clone()` at minimal depth=1 would still load every .jsonl from a s
 
 Scaling might be an issue in the future.
 
-###  2. no `append` git commit
+###  2. no `append` to git commits
 
 How to append new lines to a large .jsonl file, without downloading the previous file content?
 
-most git use sha1 for hashing. sha1 can be "streamed" by serializing its internal state, in Python you can pickle a `hashlib.sha1` instance.
+git use `sha1` for hashing (mostly). `sha1` can be "streamed" by serializing its internal state, in Python you can pickle a `hashlib.sha1` instance.
 
 Sadly, the git blob is hashed as `"blob " + <decimal size> + "\0" + <file content>`
 
-The `<decimal size>` changes everytime, makes the header different every new line is appended. To make a new git commit, download the entire file, re-hash is a must .
+every new line is appended, the `<decimal size>` changes, makes the header different. To make a new git commit, download the entire file, re-hash is a must .
 
 Learned from ChatGPT today (2025-09-30). Saved me lot of time.
 
-### why not use SQLite/D1 or any proper database?
+### 3. why not use SQLite/D1 or some proper database?
 
-The same reason why we choose static site over Wordpress, which uses a database
+The same reason why choosing static site over Wordpress, which uses a database
 
 I dislike managing DBs. Think of all those mess with backups, migrations, imports, exports, difference between mysql/pg/sqlite/etc. Tons of operating cost just for the sake of few blog comments
 
-### wasted CPU and memory, git is too heavy for comments
+### 4. wasted CPU and memory, git is too heavy for comments
 
 For a blog comment plugin, most of IOs are read. The worker will load single .jsonl from raw.githubusercontent.com if you are using github.
 
-For writes, req4cmt worker will clone the repo (as minimal as possible), append the new line, and commit it back to the remote.
+In case of writes, req4cmt worker will clone the repo (as minimal as possible), append the new line, and commit it back to the remote.
 
 Let's be realistic, your blog won't have millions of comments. The clone should be fast.
 
 And optimistically, There won't be too many visitor writing comments at the same time. So a basic git optimistic lock should be good enough
 
-### comments are risky, moderations are hard!
+### 5. comments are risky, moderation is hard!
 
 It's a git of .jsonl files, one comment for one line per commit, just `git clone`, `sed` them and `git push`
 
 To erase the history entirely, use `git cherry-pick` and `git push -f`
 
-Not a shell user? I don't think you own a static generated site anyway.
+Not a shell user? I don't think you'd run a static generated site anyway.
 
-I plan to allow req4cmt to commit to a different branch, then you can use "Pull Request" to review them them merge.
+Future work:   
+ -  allow req4cmt to commit to a different branch
+ - use "Pull Request" to review them before merge.
 
-### How to fight spam?
+### 6. How to fight spam?
 
-Look at the source. You can insert you clever methods there.
+Look at the source. You can insert you clever if-else there.
 
-You can `filter-branch` the commits just in case.
+or `git filter-branch` the commits just in case.
