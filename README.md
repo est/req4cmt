@@ -26,7 +26,7 @@ Visit my blog: <https://blog.est.im/2025/stdout-07>
 2. Create another empty repo for data storage, like `github.com/gh_user/my_comments`
 3. in your Worker settings, create a new environment secret
 4. the secret name is `REPO`, value is the git http url like `https://req4cmt:PAT@github.com/gh_user/my_comments.git`
-5. the `PAT` in the above url is a fine-grained [Personal Access Token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token) with just one `repo` scope to `gh_user/my_comments` with `conrtent` read/write permission. You can create a token under your github [personal settings - Developer Settings](https://github.com/settings/personal-access-tokens).
+5. the `PAT` in the above url is a fine-grained [Personal Access Token](https://docs.github.com/en/authentication/keeping-your-account-and-data-secure/creating-a-personal-access-token) with just one `repo` scope to `gh_user/my_comments` with `content` read/write permission. You can create a token under your github [personal settings - Developer Settings](https://github.com/settings/personal-access-tokens).
 6. if you are using Gitlab or others, similar private tokens can be found
 7. embed a snippet to your HTML page. `<script defer src="https://req4cmt.myaccount.workers.dev/req4cmt.js"></script>`
 8. A new `<div>` with a `<form>` and a `<dl>` will appear for your HTML page just below the `<script>` tag
@@ -47,10 +47,56 @@ The UI is too ugly? Modify the `<div id="req4cmt_thread">` inside `dist/req4cmt.
 
 ## failures and non-goals
 
-### partial fetch 2025-09-13
+### 1. partial fetch (2025-09-13)
 
-failed attemped to implement. isomorphic-git does not handle single file checkout well. When `.commit()` Other files gets deleted.
+To accelerate `git clone`, in theory we only need to fetch the latest commit and the individual .jsonl file.
 
-Also the `git.clone()` at minimal would read full blobs of one commit.
+I failed attemped to implement this. isomorphic-git does not handle single file checkout well. When `.commit()` Other files gets deleted. WTF?
+
+Also the `git.clone()` at minimal depth=1 would still load every .jsonl from a shallow commit.
 
 Scaling might be an issue in the future.
+
+###  2. no `append` git commit
+
+How to append new lines to a large .jsonl file, without downloading the previous file content?
+
+most git use sha1 for hashing. sha1 can be "streamed" by serializing its internal state, in Python you can pickle a `hashlib.sha1` instance.
+
+Sadly, the git blob is hashed as `"blob " + <decimal size> + "\0" + <file content>`
+
+The `<decimal size>` changes everytime, makes the header different every new line is appended. To make a new git commit, download the entire file, re-hash is a must .
+
+Learned from ChatGPT today (2025-09-30). Saved me lot of time.
+
+### why not use SQLite/D1 or any proper database?
+
+The same reason why we choose static site over Wordpress, which uses a database
+
+I dislike managing DBs. Think of all those mess with backups, migrations, imports, exports, difference between mysql/pg/sqlite/etc. Tons of operating cost just for the sake of few blog comments
+
+### wasted CPU and memory, git is too heavy for comments
+
+For a blog comment plugin, most of IOs are read. The worker will load single .jsonl from raw.githubusercontent.com if you are using github.
+
+For writes, req4cmt worker will clone the repo (as minimal as possible), append the new line, and commit it back to the remote.
+
+Let's be realistic, your blog won't have millions of comments. The clone should be fast.
+
+And optimistically, There won't be too many visitor writing comments at the same time. So a basic git optimistic lock should be good enough
+
+### comments are risky, moderations are hard!
+
+It's a git of .jsonl files, one comment for one line per commit, just `git clone`, `sed` them and `git push`
+
+To erase the history entirely, use `git cherry-pick` and `git push -f`
+
+Not a shell user? I don't think you own a static generated site anyway.
+
+I plan to allow req4cmt to commit to a different branch, then you can use "Pull Request" to review them them merge.
+
+### How to fight spam?
+
+Look at the source. You can insert you clever methods there.
+
+You can `filter-branch` the commits just in case.
