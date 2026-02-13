@@ -24,6 +24,10 @@ async function initAndFetch(git_http_url) {
 	});
 }
 
+/**
+ * @param {string} treeOid
+ * @param {string} filepath
+ */
 async function resolvePathToOid(treeOid, filepath) {
 	const parts = filepath.split('/').filter(Boolean);
 	let currentOid = treeOid;
@@ -37,6 +41,11 @@ async function resolvePathToOid(treeOid, filepath) {
 	return currentOid;
 }
 
+/**
+ * @param {string | null} treeOid
+ * @param {string[]} pathParts
+ * @param {string} newBlobOid
+ */
 async function updateTreeRecursively(treeOid, pathParts, newBlobOid) {
 	const [currentPart, ...remainingParts] = pathParts;
 	const tree = treeOid ? (await git.readTree({ fs, dir, oid: treeOid })).tree : [];
@@ -46,6 +55,7 @@ async function updateTreeRecursively(treeOid, pathParts, newBlobOid) {
 
 	if (remainingParts.length === 0) {
 		// We've reached the file level
+		/** @type {import('isomorphic-git').TreeEntry} */
 		const newEntry = { path: currentPart, oid: newBlobOid, mode: "100644", type: "blob" };
 		if (targetEntryIndex >= 0) {
 			newEntries[targetEntryIndex] = newEntry;
@@ -56,6 +66,7 @@ async function updateTreeRecursively(treeOid, pathParts, newBlobOid) {
 		// We're at a directory level
 		const subTreeOid = targetEntryIndex >= 0 ? newEntries[targetEntryIndex].oid : null;
 		const newSubTreeOid = await updateTreeRecursively(subTreeOid, remainingParts, newBlobOid);
+		/** @type {import('isomorphic-git').TreeEntry} */
 		const newEntry = { path: currentPart, oid: newSubTreeOid, mode: "40000", type: "tree" };
 
 		if (targetEntryIndex >= 0) {
