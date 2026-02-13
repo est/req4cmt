@@ -11,7 +11,7 @@ const fs = new Volume().promises  // Create an in-memory filesystem
 const dir = '.'  // in-memory git work dir
 
 async function initAndFetch(git_http_url) {
-  await git.init({ fs, dir, defaultBranch: "main" });
+  await git.init({ fs, dir });
   await git.addRemote({ fs, dir, url: git_http_url, remote: "origin" });
   await git.fetch({
     fs,
