@@ -24,13 +24,71 @@ async function initAndFetch(git_http_url) {
   });
 }
 
+async function readTreeRecursively(treeOid, prefix = "") {
+  const tree = await git.readTree({ fs, dir, oid: treeOid });
+  const entries = [];
+  
+  for (const entry of tree.tree) {
+    const fullPath = prefix ? `${prefix}/${entry.path}` : entry.path;
+    if (entry.type === "tree") {
+      const subEntries = await readTreeRecursively(entry.oid, fullPath);
+      entries.push(...subEntries);
+    } else {
+      entries.push({ path: fullPath, oid: entry.oid, mode: entry.mode });
+    }
+  }
+  
+  return entries;
+}
+
+async function buildNestedTree(files) {
+  const root = {};
+  
+  for (const file of files) {
+    const parts = file.path.split('/');
+    let current = root;
+    
+    for (let i = 0; i < parts.length - 1; i++) {
+      const part = parts[i];
+      if (!current[part]) {
+        current[part] = {};
+      }
+      current = current[part];
+    }
+    
+    const filename = parts[parts.length - 1];
+    current[filename] = { oid: file.oid, mode: file.mode };
+  }
+  
+  async function writeTreeFromNode(node) {
+    const entries = [];
+    
+    for (const [name, value] of Object.entries(node)) {
+      if (value.oid) {
+        entries.push({ path: name, oid: value.oid, mode: value.mode, type: "blob" });
+      } else {
+        const subtreeOid = await writeTreeFromNode(value);
+        entries.push({ path: name, oid: subtreeOid, mode: "40000", type: "tree" });
+      }
+    }
+    
+    if (entries.length === 0) {
+      return null;
+    }
+    
+    return await git.writeTree({ fs, dir, tree: entries });
+  }
+  
+  return await writeTreeFromNode(root);
+}
+
 async function getFileContent(git_http_url, filepath) {
   await initAndFetch(git_http_url);
   const currentCommitSha = await git.resolveRef({ fs, dir, ref: "refs/remotes/origin/HEAD" });
   const commit = await git.readCommit({ fs, dir, oid: currentCommitSha });
-  const tree = await git.readTree({ fs, dir, oid: commit.commit.tree });
+  const files = await readTreeRecursively(commit.commit.tree);
   
-  const targetEntry = tree.tree.find(entry => entry.path === filepath);
+  const targetEntry = files.find(entry => entry.path === filepath);
   if (!targetEntry) {
     return "";
   }
@@ -46,12 +104,7 @@ async function append_line(git_http_url, filepath, data) {
   
   const currentCommitSha = await git.resolveRef({ fs, dir, ref: "refs/remotes/origin/HEAD" });
   const commit = await git.readCommit({ fs, dir, oid: currentCommitSha });
-  const tree = await git.readTree({ fs, dir, oid: commit.commit.tree });
-  
-  const files = [];
-  for (const entry of tree.tree) {
-    files.push({ path: entry.path, oid: entry.oid, type: entry.type });
-  }
+  const files = await readTreeRecursively(commit.commit.tree);
   
   let targetEntry = files.find(f => f.path === filepath);
   let content;
@@ -71,20 +124,16 @@ async function append_line(git_http_url, filepath, data) {
     blob: new TextEncoder().encode(content)
   });
   
-  const newTreeEntries = [];
+  const newFiles = [];
   for (const f of files) {
-    if (f.path === filepath) {
-      newTreeEntries.push({ path: f.path, oid: newBlobOid, mode: "100644", type: "blob" });
-    } else {
-      newTreeEntries.push({ path: f.path, oid: f.oid, mode: f.type === "blob" ? "100644" : "040000", type: f.type });
+    if (f.path !== filepath) {
+      newFiles.push({ path: f.path, oid: f.oid, type: f.type });
     }
   }
   
-  if (!targetEntry) {
-    newTreeEntries.push({ path: filepath, oid: newBlobOid, mode: "100644", type: "blob" });
-  }
+  newFiles.push({ path: filepath, oid: newBlobOid, type: "blob" });
   
-  const newTreeSha = await git.writeTree({ fs, dir, tree: newTreeEntries });
+  const newTreeSha = await buildNestedTree(newFiles);
   
   await git.commit({
     fs, dir,
@@ -225,7 +274,7 @@ export default {  // Cloudflare Worker entry
 	if (cl && parseInt(cl) > 1024 * 1024) {  // 1MB is too large. even with attachments
 		return Response.json({'error': 'body too large. Stop.'}, {status: 400, headers: CORS});
 	}
-	const ct = request.headers.get('Content-Type') || ''  // consider ban the naughty IP next
+	const ct = request.headers.get('Content-Type') || ''  // consider ban naughty IP next
 	if (!(
 		ct.includes('multipart/form-data') ||
 		ct.includes('application/x-www-form-urlencoded')

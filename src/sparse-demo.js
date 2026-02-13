@@ -1,22 +1,15 @@
 import git from "isomorphic-git";
 import http from "isomorphic-git/http/web";
-import path from "path";
 import { Volume } from 'memfs';
 
 const fs = new Volume().promises;
 const dir = "/tmp/repo";
 
 const GIT_URL = "http://host/demo.git";
-const TARGET_FILE = "test.txt";
 
-async function sparseCheckout() {
-  console.log("1. Initializing empty repo...");
+async function initAndFetch() {
   await git.init({ fs, dir, defaultBranch: "main" });
-
-  console.log("2. Adding remote...");
   await git.addRemote({ fs, dir, url: GIT_URL, remote: "origin" });
-
-  console.log("3. Fetching with depth=1...");
   await git.fetch({
     fs,
     http,
@@ -26,66 +19,121 @@ async function sparseCheckout() {
     singleBranch: true,
     tags: false
   });
+}
 
-  console.log("4. Getting current HEAD...");
-  const currentCommitSha = await git.resolveRef({ fs, dir, ref: "refs/remotes/origin/HEAD" });
-  console.log("   Current HEAD SHA:", currentCommitSha);
-
-  console.log("5. Reading tree...");
-  const commit = await git.readCommit({ fs, dir, oid: currentCommitSha });
-  const tree = await git.readTree({ fs, dir, oid: commit.commit.tree });
+async function readTreeRecursively(treeOid, prefix = "") {
+  const tree = await git.readTree({ fs, dir, oid: treeOid });
+  const entries = [];
   
-  const files = [];
   for (const entry of tree.tree) {
-    files.push({ path: entry.path, oid: entry.oid, type: entry.type });
+    const fullPath = prefix ? `${prefix}/${entry.path}` : entry.path;
+    if (entry.type === "tree") {
+      const subEntries = await readTreeRecursively(entry.oid, fullPath);
+      entries.push(...subEntries);
+    } else {
+      entries.push({ path: fullPath, oid: entry.oid, mode: entry.mode });
+    }
   }
+  
+  return entries;
+}
+
+async function buildNestedTree(files) {
+  const root = {};
+  
+  for (const file of files) {
+    const parts = file.path.split('/');
+    let current = root;
+    
+    for (let i = 0; i < parts.length - 1; i++) {
+      const part = parts[i];
+      if (!current[part]) {
+        current[part] = {};
+      }
+      current = current[part];
+    }
+    
+    const filename = parts[parts.length - 1];
+    current[filename] = { oid: file.oid, mode: file.mode };
+  }
+  
+  async function writeTreeFromNode(node) {
+    const entries = [];
+    
+    for (const [name, value] of Object.entries(node)) {
+      if (value.oid) {
+        entries.push({ path: name, oid: value.oid, mode: value.mode, type: "blob" });
+      } else {
+        const subtreeOid = await writeTreeFromNode(value);
+        entries.push({ path: name, oid: subtreeOid, mode: "40000", type: "tree" });
+      }
+    }
+    
+    if (entries.length === 0) {
+      return null;
+    }
+    
+    return await git.writeTree({ fs, dir, tree: entries });
+  }
+  
+  return await writeTreeFromNode(root);
+}
+
+async function commitAndPush(filepath, content, message) {
+  console.log(`\n=== Processing ${filepath} ===`);
+  
+  await initAndFetch();
+  
+  const currentCommitSha = await git.resolveRef({ fs, dir, ref: "refs/remotes/origin/HEAD" });
+  const commit = await git.readCommit({ fs, dir, oid: currentCommitSha });
+  const files = await readTreeRecursively(commit.commit.tree);
+  
+  console.log("   Current HEAD SHA:", currentCommitSha);
   console.log("   Files:", files.map(f => f.path));
 
-  console.log("6. Processing target file...");
-  let targetEntry = files.find(f => f.path === TARGET_FILE);
-  let content;
+  let existingContent = "";
+  const targetEntry = files.find(f => f.path === filepath);
   
   if (targetEntry) {
     console.log("   Reading existing file...");
     const blob = await git.readBlob({ fs, dir, oid: targetEntry.oid });
-    content = new TextDecoder().decode(blob.blob);
-    console.log("   Original content:", content.trim());
-    content = content + "updated8\n";
+    existingContent = new TextDecoder().decode(blob.blob);
+    console.log("   Original content:", existingContent.trim());
   } else {
-    console.log("   Creating new file...");
-    content = "hello world\n";
+    console.log("   File not found, creating new file...");
   }
 
-  console.log("7. Writing new blob...");
+  const finalContent = existingContent + content;
+  
+  console.log("   Writing new blob...");
   const newBlobOid = await git.writeBlob({
     fs,
     dir,
-    blob: new TextEncoder().encode(content)
+    blob: new TextEncoder().encode(finalContent)
   });
   console.log("   New blob OID:", newBlobOid);
 
-  console.log("8. Building new tree...");
-  const newTreeEntries = [];
+  console.log("   Building new tree...");
+  const newFiles = [];
+  
   for (const f of files) {
-    if (f.path === TARGET_FILE) {
-      newTreeEntries.push({ path: f.path, oid: newBlobOid, mode: "100644", type: "blob" });
-    } else {
-      newTreeEntries.push({ path: f.path, oid: f.oid, mode: f.type === "blob" ? "100644" : "040000", type: f.type });
+    if (f.path !== filepath) {
+      newFiles.push({ path: f.path, oid: f.oid, mode: f.mode });
     }
   }
   
-  if (!targetEntry) {
-    newTreeEntries.push({ path: TARGET_FILE, oid: newBlobOid, mode: "100644", type: "blob" });
-  }
+  newFiles.push({ path: filepath, oid: newBlobOid, mode: "100644" });
 
-  const newTreeSha = await git.writeTree({ fs, dir, tree: newTreeEntries });
+  console.log("   Files:", newFiles.map(f => f.path));
+
+  const newTreeSha = await buildNestedTree(newFiles);
   console.log("   New tree SHA:", newTreeSha);
 
-  console.log("9. Committing...");
+  console.log("   Committing...");
   const commitOid = await git.commit({
     fs,
     dir,
-    message: "Update test.txt via isomorphic-git",
+    message,
     author: {
       name: "demo",
       email: "demo@example.com"
@@ -95,20 +143,29 @@ async function sparseCheckout() {
   });
   console.log("   Commit SHA:", commitOid);
 
-  console.log("10. Pushing...");
-  try {
-    await git.push({
-      fs,
-      http,
-      dir,
-      remote: "origin",
-      ref: "main",
-      force: true
-    });
-    console.log("   Push success!");
-  } catch (err) {
-    console.error("   Push failed:", err.message);
-  }
+  console.log("   Pushing...");
+  await git.push({
+    fs,
+    http,
+    dir,
+    remote: "origin",
+    ref: "main",
+    force: true
+  });
+  console.log("   Push success!");
 }
 
-sparseCheckout().catch(console.error);
+async function main() {
+  console.log("=== Test 1: Create new file subdir/test2.txt ===");
+  await commitAndPush("subdir/test2.txt", "This is test2.txt content\n", "Create subdir/test2.txt");
+
+  console.log("\n=== Test 2: Append to subdir/test.txt ===");
+  await commitAndPush("subdir/test.txt", "Appended content to test.txt\n", "Append to subdir/test.txt");
+
+  console.log("\n=== Test 3: Create new file other2.txt ===");
+  await commitAndPush("other2.txt", "This is other2.txt content\n", "Create other2.txt");
+
+  console.log("\n=== All tests completed ===");
+}
+
+main().catch(console.error);
