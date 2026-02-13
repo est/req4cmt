@@ -10,6 +10,27 @@ const fs = new Volume().promises  // Create an in-memory filesystem
 
 const dir = '.'  // in-memory git work dir
 
+/**
+Sparse Checkout Implementation
+
+Goal: fetch only needed file, modify, and commit without cloning entire repo
+Works in Cloudflare Worker (no git command, no filesystem, uses memfs)
+
+1. git.clone downloads entire repo
+   - Solution: git.init + git.fetch(depth=1) for latest commit only
+
+2. git.readTree only reads root directory
+   - Solution: resolvePathToOid recursively finds file by path
+
+3. git.writeTree with flat path "subdir/test.txt" fails
+   - Error: "The filepath contains unsafe character sequences"
+   - Solution: updateTreeRecursively builds nested tree structure
+
+4. Optimization: avoid reading entire tree
+   - resolvePathToOid: finds file OID by traversing path
+   - updateTreeRecursively: updates only necessary parts
+ */
+
 async function initAndFetch(git_http_url) {
 	await git.init({ fs, dir });
 	await git.addRemote({ fs, dir, url: git_http_url, remote: "origin" });
@@ -25,8 +46,11 @@ async function initAndFetch(git_http_url) {
 }
 
 /**
- * @param {string} treeOid
- * @param {string} filepath
+ * Find file OID by traversing path
+ * 
+ * @param {string} treeOid - Tree OID
+ * @param {string} filepath - File path like "subdir/test.txt"
+ * @returns {Promise<string | null>} - Blob OID or null if not found
  */
 async function resolvePathToOid(treeOid, filepath) {
 	const parts = filepath.split('/').filter(Boolean);
@@ -42,9 +66,26 @@ async function resolvePathToOid(treeOid, filepath) {
 }
 
 /**
- * @param {string | null} treeOid
- * @param {string[]} pathParts
- * @param {string} newBlobOid
+ * Recursively update tree structure
+ * 
+ * Why needed: Git trees are nested, can't use flat list
+ * 
+ * Failed approaches:
+ * 1. git.writeTree with flat path "subdir/test.txt"
+ *    - Error: "unsafe character sequences"
+ * 2. git.updateIndex + git.writeTree()
+ *    - git.resetIndex requires filepath, can't clear entire index
+ * 
+ * Solution:
+ * - Traverse path level by level
+ * - Replace/add blob at file level
+ * - Recursively update subtrees
+ * - Call git.writeTree at each level
+ * 
+ * @param {string | null} treeOid - Current tree OID, null = empty
+ * @param {string[]} pathParts - Path parts like ["subdir", "test.txt"]
+ * @param {string} newBlobOid - New blob OID
+ * @returns {Promise<string>} - New tree OID
  */
 async function updateTreeRecursively(treeOid, pathParts, newBlobOid) {
 	const [currentPart, ...remainingParts] = pathParts;
@@ -54,7 +95,7 @@ async function updateTreeRecursively(treeOid, pathParts, newBlobOid) {
 	let targetEntryIndex = newEntries.findIndex(e => e.path === currentPart);
 
 	if (remainingParts.length === 0) {
-		// We've reached the file level
+		// File level: replace/add blob entry
 		/** @type {import('isomorphic-git').TreeEntry} */
 		const newEntry = { path: currentPart, oid: newBlobOid, mode: "100644", type: "blob" };
 		if (targetEntryIndex >= 0) {
@@ -63,7 +104,7 @@ async function updateTreeRecursively(treeOid, pathParts, newBlobOid) {
 			newEntries.push(newEntry);
 		}
 	} else {
-		// We're at a directory level
+		// Directory level: recursively update subtree
 		const subTreeOid = targetEntryIndex >= 0 ? newEntries[targetEntryIndex].oid : null;
 		const newSubTreeOid = await updateTreeRecursively(subTreeOid, remainingParts, newBlobOid);
 		/** @type {import('isomorphic-git').TreeEntry} */
