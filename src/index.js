@@ -10,32 +10,100 @@ const fs = new Volume().promises  // Create an in-memory filesystem
 
 const dir = '.'  // in-memory git work dir
 
-async function git_checkout(git_http_url, filepath){	
-	await git.clone({
-		fs, http, dir, url: git_http_url,
-		depth: 1, singleBranch: true, noTags: true, noCheckout: true
-	})
-	await git.checkout({fs, dir, force: true})
+async function initAndFetch(git_http_url) {
+  await git.init({ fs, dir, defaultBranch: "main" });
+  await git.addRemote({ fs, dir, url: git_http_url, remote: "origin" });
+  await git.fetch({
+    fs,
+    http,
+    dir,
+    url: git_http_url,
+    depth: 1,
+    singleBranch: true,
+    tags: false
+  });
 }
 
-async function append_line(git_http_url, filepath, data){
-	if (! data.content ) return null
-	await git_checkout(git_http_url, filepath)
-	await fs.mkdir(path.dirname(filepath), {recursive: true})
-	await fs.appendFile(filepath, data.content)
-	await git.add({fs, dir, filepath})
-	await git.commit({
-		fs, dir,
-		message: data.message || 'add new',
-		author: {
-			name: data.name || 'guest',
-			email: data.email || 'guest@example.com'
-		},
-	})
-	const r = await git.push({
-		fs, http, dir,
-	})
-	return r
+async function getFileContent(git_http_url, filepath) {
+  await initAndFetch(git_http_url);
+  const currentCommitSha = await git.resolveRef({ fs, dir, ref: "refs/remotes/origin/HEAD" });
+  const commit = await git.readCommit({ fs, dir, oid: currentCommitSha });
+  const tree = await git.readTree({ fs, dir, oid: commit.commit.tree });
+  
+  const targetEntry = tree.tree.find(entry => entry.path === filepath);
+  if (!targetEntry) {
+    return "";
+  }
+  
+  const blob = await git.readBlob({ fs, dir, oid: targetEntry.oid });
+  return new TextDecoder().decode(blob.blob);
+}
+
+async function append_line(git_http_url, filepath, data) {
+  if (!data.content) return null;
+  
+  await initAndFetch(git_http_url);
+  
+  const currentCommitSha = await git.resolveRef({ fs, dir, ref: "refs/remotes/origin/HEAD" });
+  const commit = await git.readCommit({ fs, dir, oid: currentCommitSha });
+  const tree = await git.readTree({ fs, dir, oid: commit.commit.tree });
+  
+  const files = [];
+  for (const entry of tree.tree) {
+    files.push({ path: entry.path, oid: entry.oid, type: entry.type });
+  }
+  
+  let targetEntry = files.find(f => f.path === filepath);
+  let content;
+  
+  if (targetEntry) {
+    const blob = await git.readBlob({ fs, dir, oid: targetEntry.oid });
+    content = new TextDecoder().decode(blob.blob);
+  } else {
+    content = "";
+  }
+  
+  content = content + data.content;
+  
+  const newBlobOid = await git.writeBlob({
+    fs,
+    dir,
+    blob: new TextEncoder().encode(content)
+  });
+  
+  const newTreeEntries = [];
+  for (const f of files) {
+    if (f.path === filepath) {
+      newTreeEntries.push({ path: f.path, oid: newBlobOid, mode: "100644", type: "blob" });
+    } else {
+      newTreeEntries.push({ path: f.path, oid: f.oid, mode: f.type === "blob" ? "100644" : "040000", type: f.type });
+    }
+  }
+  
+  if (!targetEntry) {
+    newTreeEntries.push({ path: filepath, oid: newBlobOid, mode: "100644", type: "blob" });
+  }
+  
+  const newTreeSha = await git.writeTree({ fs, dir, tree: newTreeEntries });
+  
+  await git.commit({
+    fs, dir,
+    message: data.message || 'add new',
+    author: {
+      name: data.name || 'guest',
+      email: data.email || 'guest@example.com'
+    },
+    tree: newTreeSha,
+    parent: [currentCommitSha]
+  });
+  
+  const r = await git.push({
+    fs, http, dir,
+    remote: "origin",
+    ref: "main",
+    force: true
+  });
+  return r;
 }
 
 const DEFAULT_EMAIL = '?@c.est.im'
@@ -108,7 +176,7 @@ export default {  // Cloudflare Worker entry
 	if (!env.REPO) {  // Check if required environment variables are set
 		return Response.json({'error': 'Missing REPO'}, {status: 400});
 	}
-	let req_path = /^\/+(\S+)$/.exec(new URL(request.url).pathname)?.[1] || ''
+	let req_path = /^\/+([^\/]+)$/.exec(new URL(request.url).pathname)?.[1] || ''
 	const new_h = {
 		...CORS,
 		"Content-Type": 'application/x-ndjson',
@@ -132,10 +200,9 @@ export default {  // Cloudflare Worker entry
 				return new Response('', {headers: new_h})
 			}
 		} else {  // partial clone and return
-			await git_checkout(env.REPO, req_path)
 			let data = ''
 			try{
-				data = await fs.readFile(req_path, 'utf8')
+				data = await getFileContent(env.REPO, req_path)
 			} catch (ex) {
 				if (ex.code != 'ENOENT'){
 					console.log('partial clone failed ', ex)
@@ -189,7 +256,7 @@ export default {  // Cloudflare Worker entry
 	const info = {
 		content: form_content,
 		name: (form.get('x-name') || '?').slice(0, 200).trim() || '?',
-		email: (/(\S+@\S+\.\S+)/.exec(form.get('x-email'))?.[1] || DEFAULT_EMAIL).slice(0, 200),
+		email: (/([^@\s]+@[^@\s]+\.[^@\s]+)/.exec(form.get('x-email'))?.[1] || DEFAULT_EMAIL).slice(0, 200),
 		link: (form.get('x-link') || '').slice(0, 1024 * 4),  // 4k should be enough
 	}
 	console.log(page_url, info)
