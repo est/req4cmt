@@ -21,90 +21,72 @@ async function initAndFetch() {
   });
 }
 
-async function readTreeRecursively(treeOid, prefix = "") {
-  const tree = await git.readTree({ fs, dir, oid: treeOid });
-  const entries = [];
-  
-  for (const entry of tree.tree) {
-    const fullPath = prefix ? `${prefix}/${entry.path}` : entry.path;
-    if (entry.type === "tree") {
-      const subEntries = await readTreeRecursively(entry.oid, fullPath);
-      entries.push(...subEntries);
-    } else {
-      entries.push({ path: fullPath, oid: entry.oid, mode: entry.mode });
-    }
+async function resolvePathToOid(treeOid, filepath) {
+  const parts = filepath.split('/').filter(Boolean);
+  let currentOid = treeOid;
+
+  for (const part of parts) {
+    const tree = await git.readTree({ fs, dir, oid: currentOid });
+    const entry = tree.tree.find(e => e.path === part);
+    if (!entry) return null;
+    currentOid = entry.oid;
   }
-  
-  return entries;
+  return currentOid;
 }
 
-async function buildNestedTree(files) {
-  const root = {};
-  
-  for (const file of files) {
-    const parts = file.path.split('/');
-    let current = root;
-    
-    for (let i = 0; i < parts.length - 1; i++) {
-      const part = parts[i];
-      if (!current[part]) {
-        current[part] = {};
-      }
-      current = current[part];
+async function updateTreeRecursively(treeOid, pathParts, newBlobOid) {
+  const [currentPart, ...remainingParts] = pathParts;
+  const tree = treeOid ? (await git.readTree({ fs, dir, oid: treeOid })).tree : [];
+
+  let newEntries = [...tree];
+  let targetEntryIndex = newEntries.findIndex(e => e.path === currentPart);
+
+  if (remainingParts.length === 0) {
+    const newEntry = { path: currentPart, oid: newBlobOid, mode: "100644", type: "blob" };
+    if (targetEntryIndex >= 0) {
+      newEntries[targetEntryIndex] = newEntry;
+    } else {
+      newEntries.push(newEntry);
     }
-    
-    const filename = parts[parts.length - 1];
-    current[filename] = { oid: file.oid, mode: file.mode };
+  } else {
+    const subTreeOid = targetEntryIndex >= 0 ? newEntries[targetEntryIndex].oid : null;
+    const newSubTreeOid = await updateTreeRecursively(subTreeOid, remainingParts, newBlobOid);
+    const newEntry = { path: currentPart, oid: newSubTreeOid, mode: "40000", type: "tree" };
+
+    if (targetEntryIndex >= 0) {
+      newEntries[targetEntryIndex] = newEntry;
+    } else {
+      newEntries.push(newEntry);
+    }
   }
-  
-  async function writeTreeFromNode(node) {
-    const entries = [];
-    
-    for (const [name, value] of Object.entries(node)) {
-      if (value.oid) {
-        entries.push({ path: name, oid: value.oid, mode: value.mode, type: "blob" });
-      } else {
-        const subtreeOid = await writeTreeFromNode(value);
-        entries.push({ path: name, oid: subtreeOid, mode: "40000", type: "tree" });
-      }
-    }
-    
-    if (entries.length === 0) {
-      return null;
-    }
-    
-    return await git.writeTree({ fs, dir, tree: entries });
-  }
-  
-  return await writeTreeFromNode(root);
+
+  return await git.writeTree({ fs, dir, tree: newEntries });
 }
 
 async function commitAndPush(filepath, content, message) {
   console.log(`\n=== Processing ${filepath} ===`);
-  
+
   await initAndFetch();
-  
+
   const currentCommitSha = await git.resolveRef({ fs, dir, ref: "refs/remotes/origin/HEAD" });
   const commit = await git.readCommit({ fs, dir, oid: currentCommitSha });
-  const files = await readTreeRecursively(commit.commit.tree);
-  
-  console.log("   Current HEAD SHA:", currentCommitSha);
-  console.log("   Files:", files.map(f => f.path));
 
+  console.log("   Current HEAD SHA:", currentCommitSha);
+
+  const existingOid = await resolvePathToOid(commit.commit.tree, filepath);
   let existingContent = "";
-  const targetEntry = files.find(f => f.path === filepath);
-  
-  if (targetEntry) {
+
+  if (existingOid) {
     console.log("   Reading existing file...");
-    const blob = await git.readBlob({ fs, dir, oid: targetEntry.oid });
+    const blob = await git.readBlob({ fs, dir, oid: existingOid });
     existingContent = new TextDecoder().decode(blob.blob);
-    console.log("   Original content:", existingContent.trim());
+    console.log("   Original content length:", existingContent.length);
   } else {
     console.log("   File not found, creating new file...");
   }
 
   const finalContent = existingContent + content;
-  
+
   console.log("   Writing new blob...");
   const newBlobOid = await git.writeBlob({
     fs,
@@ -114,19 +96,7 @@ async function commitAndPush(filepath, content, message) {
   console.log("   New blob OID:", newBlobOid);
 
   console.log("   Building new tree...");
-  const newFiles = [];
-  
-  for (const f of files) {
-    if (f.path !== filepath) {
-      newFiles.push({ path: f.path, oid: f.oid, mode: f.mode });
-    }
-  }
-  
-  newFiles.push({ path: filepath, oid: newBlobOid, mode: "100644" });
-
-  console.log("   Files:", newFiles.map(f => f.path));
-
-  const newTreeSha = await buildNestedTree(newFiles);
+  const newTreeSha = await updateTreeRecursively(commit.commit.tree, filepath.split('/').filter(Boolean), newBlobOid);
   console.log("   New tree SHA:", newTreeSha);
 
   console.log("   Committing...");
