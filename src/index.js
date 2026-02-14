@@ -171,9 +171,9 @@ async function append_line(git_http_url, filepath, data) {
 	const r = await git.push({
 		fs, http, dir,
 		remote: "origin",
-		ref: "main",
-		force: true
+		// ref: "main", force: true
 	});
+	
 	return r;
 }
 
