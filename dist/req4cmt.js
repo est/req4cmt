@@ -33,11 +33,12 @@ async function post_cmt(evt) {
     const ta = evt.target.querySelector('textarea')
     const dl = evt.target.querySelector('dl')
     const name = fd.get('name') || '?'
+    const link = fd.get('link') || ''
     const dt = ne('dt')
     dt.appendChild(ne('small', {$: new Date().toLocaleString('en-CA',{hour12: false}).replace(',', '')}))
     dt.appendChild(document.createTextNode(' '))
     if (link){
-      dt.appendChild(ne('a', {href: fd.get('link') || '', $: name}))
+      dt.appendChild(ne('a', {href: link , $: name}))
     } else {
       dt.appendChild(ne('b', {$: name}))
     }
