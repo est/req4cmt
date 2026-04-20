@@ -42,6 +42,7 @@ The UI is too ugly? Modify the `<div id="req4cmt_thread">` inside `dist/req4cmt.
 - [ ] rich content formatting like `pre` or markdown
 - [ ] `at` someone for notification?
 - [ ] also as a [Github App](https://github.com/apps/req4cmt)
+- [X] 20260420 sort comments by reverse time; Give hint in textarea after submit
 - [X] limit length
 - [X] 20250912 git-http fetch file for private repos, replace github download.
 

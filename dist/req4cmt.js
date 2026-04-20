@@ -7,6 +7,7 @@ async function post_cmt(evt) {
   evt.preventDefault()
   evt.stopPropagation()
   let req
+  const fd = new FormData(evt.target)
   try {
     req = await fetch(evt.target.action, {
       method: "POST", referrerPolicy: "unsafe-url",
@@ -14,7 +15,7 @@ async function post_cmt(evt) {
         "Accept": "application/json",
         "Content-Type": "application/x-www-form-urlencoded",
       },
-      body: new URLSearchParams(new FormData(evt.target))
+      body: new URLSearchParams(fd)
     })
   } catch (e) {
     console.info('[req4cmt] failed ' + e)
@@ -30,8 +31,21 @@ async function post_cmt(evt) {
   evt.submitter.value = is_ok ? '✅' : '⚠️'
   if (is_ok){
     const ta = evt.target.querySelector('textarea')
+    const dl = evt.target.querySelector('dl')
+    const name = fd.get('name') || '?'
+    const dt = ne('dt')
+    dt.appendChild(ne('small', {$: new Date().toLocaleString('en-CA',{hour12: false}).replace(',', '')}))
+    dt.appendChild(document.createTextNode(' '))
+    if (link){
+      dt.appendChild(ne('a', {href: fd.get('link') || '', $: name}))
+    } else {
+      dt.appendChild(ne('b', {$: name}))
+    }
+    dl.insertBefore(dt, dl.firstChild)
+    const dd = ne('dd', {$: fd.get('content')})
+    dl.insertBefore(dd, dl.children[1])
     ta.value = ''
-    ta.textContent = 'new comments will appear eventually.\n新评论将稍后刷新'
+    ta.placeholder = 'new comments will appear eventually.\n新评论将稍后刷新'
     setTimeout(load_cmts, 3000, evt.target)
   }
   return false;
@@ -56,7 +70,7 @@ async function load_cmts(form){
   }
   const dl = form.querySelector('dl')
   dl.replaceChildren() // clear
-  body.split(/\r?\n/).forEach(line=>{
+  body.split(/\r?\n/).reverse().forEach(line=>{
       let data;
       try{
         data = JSON.parse(line)
