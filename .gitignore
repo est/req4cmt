@@ -106,4 +106,5 @@ typings/
 .dev.vars*
 .env*
 .wrangler/
+*.sublime-*
 
