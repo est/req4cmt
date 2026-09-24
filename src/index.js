@@ -229,6 +229,77 @@ function parse_content(text) {
 	}
 }
 
+// Find first `timestamp` value in a telemetry query response (shape varies
+// by view type). Returns ISO string or null.
+function find_first_timestamp(o) {
+	try {
+		let found = null;
+		const seen = new Set();
+		(function walk(n, depth) {
+			if (found || depth > 6 || n == null) return;
+			if (typeof n !== 'object' || seen.has(n)) return;
+			seen.add(n);
+			if (Array.isArray(n)) {
+				for (const v of n) { walk(v, depth + 1); if (found) return; }
+				return;
+			}
+			for (const [k, v] of Object.entries(n)) {
+				if (found) return;
+				if (k === 'timestamp' && (typeof v === 'number' || typeof v === 'string')) {
+					const d = new Date(v);
+					if (!isNaN(d)) { found = d.toISOString(); return; }
+				}
+				if (typeof v === 'object') walk(v, depth + 1);
+			}
+		})(o, 0);
+		return found;
+	} catch {
+		return null;
+	}
+}
+
+// Look up when the GET .jsonl behind `ray` hit this Worker, via Workers
+// Observability telemetry. Best-effort: any failure returns a short string,
+// never blocks the comment commit. Needs secrets CF_ACCOUNT_ID + CF_API_TOKEN
+// (token with Workers Observability permission).
+async function query_ray_time(env, ray) {
+	if (!ray || ray === 'none') return 'none';
+	if (!env.CF_ACCOUNT_ID || !env.CF_API_TOKEN) return 'skipped-no-creds';
+	// cf-ray looks like `<hex>-<COLO>`; telemetry key is the part before the suffix
+	const id = ray.includes('-') ? ray.slice(0, ray.lastIndexOf('-')) : ray;
+	const now = Date.now();
+	try {
+		const ctl = new AbortController();
+		const timer = setTimeout(() => ctl.abort(), 8000);
+		let rsp;
+		try {
+			rsp = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/workers/observability/telemetry/query`, {
+				method: 'POST',
+				headers: { 'Authorization': 'Bearer ' + env.CF_API_TOKEN, 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					queryId: 'req4cmt-ray-check',
+					view: 'events',
+					limit: 5,
+					dry: true,
+					timeframe: { from: now - 24 * 3600 * 1000, to: now },
+					parameters: {
+						datasets: ['cloudflare-workers'],
+						filters: [{ key: '$metadata.requestId', operation: 'eq', type: 'string', value: id }],
+					},
+				}),
+				signal: ctl.signal,
+			});
+		} finally {
+			clearTimeout(timer);
+		}
+		if (!rsp.ok) return `err:http-${rsp.status}`.slice(0, 50);
+		const j = await rsp.json().catch(() => null);
+		return find_first_timestamp(j) || 'miss';
+	} catch (ex) {
+		return ('err:' + (ex?.name || 'fetch-fail')).slice(0, 50);
+	}
+}
+
 const BASE_CORS = {
 	// 'Access-Control-Allow-Origin': '*',
 	'Access-Control-Allow-Methods': 'POST',
@@ -322,12 +393,11 @@ export default {  // Cloudflare Worker entry
 		if (form.get('name') || form.get('email')) {  // fooled lol
 			return Response.json({ 'error': 'yeah right' }, { headers: CORS })
 		}
-		// ray observation (phase 1): frontend appends cf-ray of the earlier GET
-		// .jsonl as `?ray=` query param. Record raw value, truncated.
-		tail_msg.ray = (new URL(request.url).searchParams.get('ray') || 'none').slice(0, 50)
-		tail_msg.post_ray = (request.headers.get('cf-ray') || 'none').slice(0, 50)
-		tail_msg.req_id = (request.headers.get('cf-request-id') || 'none').slice(0, 50)
-		tail_msg.ray_check = 'unverified-observe-phase1'
+		// ray observation: frontend appends cf-ray of the earlier GET
+		// .jsonl as `?ray=` query param. Record raw value + looked-up request time.
+		const ray_raw = (new URL(request.url).searchParams.get('t') || '').slice(0, 50)
+		tail_msg.ray = ray_raw || '-'
+		tail_msg.ray_time = await query_ray_time(env, ray_raw)
 		const form_content = (form.get('content') || '').trim()
 		if (form_content.length > 1024 * 1024) {  // prevent over large text again
 			return Response.json({ 'error': 'content too large. Bye' }, { status: 400, headers: CORS });

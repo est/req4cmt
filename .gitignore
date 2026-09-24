@@ -108,3 +108,4 @@ typings/
 .wrangler/
 *.sublime-*
 
+.tmp
