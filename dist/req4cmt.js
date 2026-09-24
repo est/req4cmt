@@ -35,7 +35,9 @@ async function post_cmt(evt) {
   const fd = new FormData(form)
   let req, rsp = {}
   try {
-    req = await fetch(form.action, {
+    const ray = form.dataset.req4cmtRay
+    const url = ray ? `${form.action}?ray=${encodeURIComponent(ray)}` : form.action
+    req = await fetch(url, {
       method: "POST", referrerPolicy: "unsafe-url",
       headers: { Accept: "application/json" },
       body: new URLSearchParams(fd)
@@ -67,11 +69,7 @@ async function load_cmts(form){
     const rsp = await fetch(form.action + '.jsonl', {headers: {Accept: "application/x-ndjson"}})
     try{
       const ray = rsp.headers.get('cf-ray')
-      if (ray){
-        form.dataset.req4cmtRay = ray
-        const h = form.querySelector('input[name="x-ray"]')
-        if (h) h.value = ray
-      }
+      if (ray) form.dataset.req4cmtRay = ray
     } catch(e){}
     body = await rsp.text()
   } catch(e) {
@@ -96,7 +94,6 @@ async function init(){
   <form action="${api}" method="post">
   <input type="hidden" name="name" placeholder="guest">
   <input type="hidden" name="email" placeholder="dont@spam.me">
-  <input type="hidden" name="x-ray">
   <textarea name="content" style="width: 100%; height: 5em"></textarea>
   <input type="submit" value="Go">
   <br/>

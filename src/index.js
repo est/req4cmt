@@ -322,15 +322,11 @@ export default {  // Cloudflare Worker entry
 		if (form.get('name') || form.get('email')) {  // fooled lol
 			return Response.json({ 'error': 'yeah right' }, { headers: CORS })
 		}
-		// ray observation (phase 1): frontend sends cf-ray of the earlier GET
-		// .jsonl as `x-ray`. Missing/malformed rays are allowed, only recorded.
-		// Real telemetry verification comes later; cf-ray format is like `9e0a...-SJC`.
-		const raw_ray = ((form.get('x-ray') || '').toString()).trim().slice(0, 128)
-		const safe_ray = raw_ray.replace(/[^A-Za-z0-9_-]/g, '?')
-		const ray_claimed = !raw_ray ? 'none' : (/^[A-Za-z0-9_-]{8,128}$/.test(raw_ray) ? raw_ray : `malformed:${safe_ray}`.slice(0, 128))
-		tail_msg.ray = ray_claimed
-		tail_msg.post_ray = (request.headers.get('cf-ray') || 'none').trim().slice(0, 128)
-		tail_msg.req_id = (request.headers.get('cf-request-id') || 'none').trim().slice(0, 128)
+		// ray observation (phase 1): frontend appends cf-ray of the earlier GET
+		// .jsonl as `?ray=` query param. Record raw value, truncated.
+		tail_msg.ray = (new URL(request.url).searchParams.get('ray') || 'none').slice(0, 50)
+		tail_msg.post_ray = (request.headers.get('cf-ray') || 'none').slice(0, 50)
+		tail_msg.req_id = (request.headers.get('cf-request-id') || 'none').slice(0, 50)
 		tail_msg.ray_check = 'unverified-observe-phase1'
 		const form_content = (form.get('content') || '').trim()
 		if (form_content.length > 1024 * 1024) {  // prevent over large text again
