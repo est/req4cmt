@@ -265,7 +265,7 @@ function find_first_timestamp(o) {
 async function query_ray_time(env, ray) {
 	if (!ray) return '-';
 	if (!env.CF_ACCOUNT_ID || !env.CF_API_TOKEN) return 'skipped-no-creds';
-	// cf-ray looks like `<hex>-<COLO>`; telemetry key is the part before the suffix
+	// cf-ray looks like `<hex>-<COLO>`; telemetry stores the hex part as $metadata.rayId
 	const id = ray.includes('-') ? ray.slice(0, ray.lastIndexOf('-')) : ray;
 	const now = Date.now();
 	try {
@@ -280,7 +280,7 @@ async function query_ray_time(env, ray) {
 				timeframe: { from: now - 1 * 3600 * 1000, to: now },
 				parameters: {
 					datasets: ['cloudflare-workers'],
-					filters: [{ key: '$metadata.requestId', operation: 'eq', type: 'string', value: id }],
+					filters: [{ key: '$metadata.rayId', operation: 'eq', type: 'string', value: id }],
 				},
 			}),
 			signal: AbortSignal.timeout(8000),
@@ -288,7 +288,7 @@ async function query_ray_time(env, ray) {
 		if (!rsp.ok) {
 			const body = await rsp.text().catch(() => '');
 			console.log('ray query failed', rsp.status, body.slice(0, 2000));
-			return `err:http-${rsp.status}:${body}`.slice(0, 300);
+			return `err:http-${rsp.status}`.slice(0, 300);
 		}
 		const j = await rsp.json().catch(() => null);
 		return find_first_timestamp(j) || 'miss';
