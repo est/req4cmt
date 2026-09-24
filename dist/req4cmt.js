@@ -35,7 +35,9 @@ async function post_cmt(evt) {
   const fd = new FormData(form)
   let req, rsp = {}
   try {
-    req = await fetch(form.action, {
+    const t = form.dataset.t
+    const url = t ? `${form.action}?t=${encodeURIComponent(t)}` : form.action
+    req = await fetch(url, {
       method: "POST", referrerPolicy: "unsafe-url",
       headers: { Accept: "application/json" },
       body: new URLSearchParams(fd)
@@ -65,7 +67,8 @@ async function load_cmts(form){
   let body
   try{
     const rq = await fetch(form.action + '.jsonl', {headers: {Accept: "application/x-ndjson"}})
-    form.action =  `${form.action}?t=${encodeURIComponent(rq.headers.get('cf-ray'))}`
+    const ray = rq.headers.get('cf-ray')
+    if (ray) form.dataset.t = ray
     body = await rq.text()
   } catch(e) {
     console.info('[req4cmt] failed ' + e)

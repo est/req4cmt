@@ -263,35 +263,28 @@ function find_first_timestamp(o) {
 // never blocks the comment commit. Needs secrets CF_ACCOUNT_ID + CF_API_TOKEN
 // (token with Workers Observability permission).
 async function query_ray_time(env, ray) {
-	if (!ray || ray === 'none') return 'none';
+	if (!ray) return '-';
 	if (!env.CF_ACCOUNT_ID || !env.CF_API_TOKEN) return 'skipped-no-creds';
 	// cf-ray looks like `<hex>-<COLO>`; telemetry key is the part before the suffix
 	const id = ray.includes('-') ? ray.slice(0, ray.lastIndexOf('-')) : ray;
 	const now = Date.now();
 	try {
-		const ctl = new AbortController();
-		const timer = setTimeout(() => ctl.abort(), 8000);
-		let rsp;
-		try {
-			rsp = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/workers/observability/telemetry/query`, {
-				method: 'POST',
-				headers: { 'Authorization': 'Bearer ' + env.CF_API_TOKEN, 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					queryId: 'req4cmt-ray-check',
-					view: 'events',
-					limit: 5,
-					dry: true,
-					timeframe: { from: now - 24 * 3600 * 1000, to: now },
-					parameters: {
-						datasets: ['cloudflare-workers'],
-						filters: [{ key: '$metadata.requestId', operation: 'eq', type: 'string', value: id }],
-					},
-				}),
-				signal: ctl.signal,
-			});
-		} finally {
-			clearTimeout(timer);
-		}
+		const rsp = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/workers/observability/telemetry/query`, {
+			method: 'POST',
+			headers: { 'Authorization': 'Bearer ' + env.CF_API_TOKEN, 'Content-Type': 'application/json' },
+			body: JSON.stringify({
+				queryId: 'req4cmt-ray-check',
+				view: 'events',
+				limit: 5,
+				dry: true,
+				timeframe: { from: now - 24 * 3600 * 1000, to: now },
+				parameters: {
+					datasets: ['cloudflare-workers'],
+					filters: [{ key: '$metadata.requestId', operation: 'eq', type: 'string', value: id }],
+				},
+			}),
+			signal: AbortSignal.timeout(8000),
+		});
 		if (!rsp.ok) return `err:http-${rsp.status}`.slice(0, 50);
 		const j = await rsp.json().catch(() => null);
 		return find_first_timestamp(j) || 'miss';
@@ -397,7 +390,7 @@ export default {  // Cloudflare Worker entry
 		// .jsonl as `?ray=` query param. Record raw value + looked-up request time.
 		const ray_raw = (new URL(request.url).searchParams.get('t') || '').slice(0, 50)
 		tail_msg.ray = ray_raw || '-'
-		tail_msg.ray_time = await query_ray_time(env, ray_raw)
+		tail_msg.ray_time = ray_raw ? await query_ray_time(env, ray_raw) : '-'
 		const form_content = (form.get('content') || '').trim()
 		if (form_content.length > 1024 * 1024) {  // prevent over large text again
 			return Response.json({ 'error': 'content too large. Bye' }, { status: 400, headers: CORS });
