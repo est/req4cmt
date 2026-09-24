@@ -229,6 +229,34 @@ function parse_content(text) {
 	}
 }
 
+// Best-effort in-memory ray cache: a client's GET .jsonl and POST often land
+// on the same isolate. GET records its time keyed by ray; POST checks here
+// first before the expensive telemetry query. All entries live RAY_TTL.
+const RAY_TTL = 3600 * 1000;
+const ray_seen = new Map(); // key -> event timestamp ms
+
+function strip_ray(ray) {
+	return ray.includes('-') ? ray.slice(0, ray.lastIndexOf('-')) : ray;
+}
+
+function ray_cache_get(key) {
+	if (!key) return 0;
+	const t = ray_seen.get(key);
+	if (!t) return 0;
+	if (Date.now() - t > RAY_TTL) { ray_seen.delete(key); return 0; }
+	return t;
+}
+
+function ray_cache_set(key, t) {
+	if (!key) return;
+	const now = Date.now();
+	for (const [k, v] of ray_seen) {
+		if (now - v > RAY_TTL) ray_seen.delete(k);
+	}
+	while (ray_seen.size >= 5000) ray_seen.delete(ray_seen.keys().next().value);
+	ray_seen.set(key, t || now);
+}
+
 // Find first `timestamp` value in a telemetry query response (shape varies
 // by view type). Returns ISO string or null.
 function find_first_timestamp(o) {
@@ -266,7 +294,7 @@ async function query_ray_time(env, ray) {
 	if (!ray) return '-';
 	if (!env.CF_ACCOUNT_ID || !env.CF_API_TOKEN) return 'skipped-no-creds';
 	// cf-ray looks like `<hex>-<COLO>`; telemetry stores the hex part as $metadata.rayId
-	const id = ray.includes('-') ? ray.slice(0, ray.lastIndexOf('-')) : ray;
+	const id = strip_ray(ray);
 	const now = Date.now();
 	try {
 		const rsp = await fetch(`https://api.cloudflare.com/client/v4/accounts/${env.CF_ACCOUNT_ID}/workers/observability/telemetry/query`, {
@@ -327,6 +355,9 @@ export default {  // Cloudflare Worker entry
 		}
 		// only path ends with .jsonl
 		if (request.method == 'GET' && req_path.endsWith('.jsonl')) {
+			// remember GET time for the POST fast path (same-isolate best effort)
+			ray_cache_set(strip_ray((request.headers.get('cf-ray') || '').trim()));
+			ray_cache_set((request.headers.get('cf-request-id') || '').trim());
 			if (env.REPO.includes('github.com/')) {  // proxy github
 				const repo_path = new URL(env.REPO).pathname.replace(/\.git$/, "")
 				const req_url = `https://raw.githubusercontent.com${repo_path}/refs/heads/master/${req_path}`
@@ -394,7 +425,19 @@ export default {  // Cloudflare Worker entry
 		// .jsonl as `?ray=` query param. Record raw value + looked-up request time.
 		const ray_raw = (new URL(request.url).searchParams.get('t') || '').slice(0, 50)
 		tail_msg.ray = ray_raw || '-'
-		tail_msg.ray_time = ray_raw ? await query_ray_time(env, ray_raw) : '-'
+		if (!ray_raw) {
+			tail_msg.ray_time = '-';
+		} else {
+			// fast path: same isolate saw the GET; else fall back to telemetry API
+			const mem_hit = ray_cache_get(strip_ray(ray_raw)) || ray_cache_get(ray_raw);
+			if (mem_hit) {
+				tail_msg.ray_time = new Date(mem_hit).toISOString();
+			} else {
+				const api_time = await query_ray_time(env, ray_raw);
+				tail_msg.ray_time = api_time;
+				if (/^\d{4}-\d{2}-\d{2}T/.test(api_time)) ray_cache_set(strip_ray(ray_raw), Date.parse(api_time));
+			}
+		}
 		const form_content = (form.get('content') || '').trim()
 		if (form_content.length > 1024 * 1024) {  // prevent over large text again
 			return Response.json({ 'error': 'content too large. Bye' }, { status: 400, headers: CORS });
