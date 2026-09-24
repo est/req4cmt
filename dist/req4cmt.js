@@ -64,7 +64,16 @@ async function post_cmt(evt) {
 async function load_cmts(form){
   let body
   try{
-    body = await (await fetch(form.action + '.jsonl', {headers: {Accept: "application/x-ndjson"}})).text()
+    const rsp = await fetch(form.action + '.jsonl', {headers: {Accept: "application/x-ndjson"}})
+    try{
+      const ray = rsp.headers.get('cf-ray')
+      if (ray){
+        form.dataset.req4cmtRay = ray
+        const h = form.querySelector('input[name="x-ray"]')
+        if (h) h.value = ray
+      }
+    } catch(e){}
+    body = await rsp.text()
   } catch(e) {
     console.info('[req4cmt] failed ' + e)
     return
@@ -87,6 +96,7 @@ async function init(){
   <form action="${api}" method="post">
   <input type="hidden" name="name" placeholder="guest">
   <input type="hidden" name="email" placeholder="dont@spam.me">
+  <input type="hidden" name="x-ray">
   <textarea name="content" style="width: 100%; height: 5em"></textarea>
   <input type="submit" value="Go">
   <br/>

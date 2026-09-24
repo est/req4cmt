@@ -233,6 +233,7 @@ const BASE_CORS = {
 	// 'Access-Control-Allow-Origin': '*',
 	'Access-Control-Allow-Methods': 'POST',
 	'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+	'Access-Control-Expose-Headers': 'cf-ray',
 	'Access-Control-Allow-Credentials': 'true',
 	'Access-Control-Max-Age': '86400'
 }
@@ -321,6 +322,16 @@ export default {  // Cloudflare Worker entry
 		if (form.get('name') || form.get('email')) {  // fooled lol
 			return Response.json({ 'error': 'yeah right' }, { headers: CORS })
 		}
+		// ray observation (phase 1): frontend sends cf-ray of the earlier GET
+		// .jsonl as `x-ray`. Missing/malformed rays are allowed, only recorded.
+		// Real telemetry verification comes later; cf-ray format is like `9e0a...-SJC`.
+		const raw_ray = ((form.get('x-ray') || '').toString()).trim().slice(0, 128)
+		const safe_ray = raw_ray.replace(/[^A-Za-z0-9_-]/g, '?')
+		const ray_claimed = !raw_ray ? 'none' : (/^[A-Za-z0-9_-]{8,128}$/.test(raw_ray) ? raw_ray : `malformed:${safe_ray}`.slice(0, 128))
+		tail_msg.ray = ray_claimed
+		tail_msg.post_ray = (request.headers.get('cf-ray') || 'none').trim().slice(0, 128)
+		tail_msg.req_id = (request.headers.get('cf-request-id') || 'none').trim().slice(0, 128)
+		tail_msg.ray_check = 'unverified-observe-phase1'
 		const form_content = (form.get('content') || '').trim()
 		if (form_content.length > 1024 * 1024) {  // prevent over large text again
 			return Response.json({ 'error': 'content too large. Bye' }, { status: 400, headers: CORS });
