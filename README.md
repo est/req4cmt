@@ -30,6 +30,7 @@ Visit my blog: <https://blog.est.im/2025/stdout-07>
 6. if you are using Gitlab or others, similar private tokens can be found
 7. embed a snippet to your HTML page. `<script defer src="https://req4cmt.myaccount.workers.dev/req4cmt.js"></script>`
 8. A new `<div>` with a `<form>` and a `<dl>` will appear for your HTML page just below the `<script>` tag
+9. anti-bot ray check (optional): `wrangler secret put CF_ACCOUNT_ID` and `wrangler secret put CF_API_TOKEN` (token needs Workers Observability permission). Each comment commit then records `ray_time`, the looked-up request time of the earlier `.jsonl` fetch. Without them it records `skipped-no-creds`. Requires wrangler >= 3.78.6 for the `[observability]` setting.
 
 The UI is too ugly? Modify the `<div id="req4cmt_thread">` inside `dist/req4cmt.js` yourself.
 
@@ -42,6 +43,7 @@ The UI is too ugly? Modify the `<div id="req4cmt_thread">` inside `dist/req4cmt.
 - [ ] rich content formatting like `pre` or markdown
 - [ ] `at` someone for notification?
 - [ ] also as a [Github App](https://github.com/apps/req4cmt)
+- [ ] switch to CF Artifact, a [100KB wasm git in Zig](https://blog.cloudflare.com/artifacts-git-for-agents-beta/)
 - [X] 20260420 sort comments by reverse time; Give hint in textarea after submit
 - [X] limit length
 - [X] 20250912 git-http fetch file for private repos, replace github download.

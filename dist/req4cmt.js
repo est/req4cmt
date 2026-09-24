@@ -1,56 +1,5 @@
 (function(){
 
-async function post_cmt(evt) {
-  if (!evt){
-    evt = this.event  // called as onsubmit="xxx"
-  }
-  evt.preventDefault()
-  evt.stopPropagation()
-  let req
-  const fd = new FormData(evt.target)
-  try {
-    req = await fetch(evt.target.action, {
-      method: "POST", referrerPolicy: "unsafe-url",
-      headers: {
-        "Accept": "application/json",
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams(fd)
-    })
-  } catch (e) {
-    console.info('[req4cmt] failed ' + e)
-    evt.submitter.value = '❌'
-  }
-  let rsp
-  try {
-    rsp = await req.json()
-  } catch (e) {
-    rsp = {}
-  }
-  const is_ok = req.status == 200 && !rsp.error
-  evt.submitter.value = is_ok ? '✅' : '⚠️'
-  if (is_ok){
-    const ta = evt.target.querySelector('textarea')
-    const dl = evt.target.querySelector('dl')
-    const name = fd.get('name') || '?'
-    const link = fd.get('link') || ''
-    const dt = ne('dt')
-    dt.appendChild(ne('small', {$: new Date().toLocaleString('en-CA',{hour12: false}).replace(',', '')}))
-    dt.appendChild(document.createTextNode(' '))
-    if (link){
-      dt.appendChild(ne('a', {href: link , $: name}))
-    } else {
-      dt.appendChild(ne('b', {$: name}))
-    }
-    dl.insertBefore(dt, dl.firstChild)
-    const dd = ne('dd', {$: fd.get('content')})
-    dl.insertBefore(dd, dl.children[1])
-    ta.value = ''
-    ta.placeholder = 'new comments will appear eventually.\n新评论将稍后刷新'
-    setTimeout(load_cmts, 3000, evt.target)
-  }
-  return false;
-}
 function ne(tag, attr={}){ // new-element
   const e=document.createElement(tag)
   if(attr.$){
@@ -60,37 +9,78 @@ function ne(tag, attr={}){ // new-element
   Object.entries(attr).forEach(([k,v])=>e.setAttribute(k,v))
   return e
 }
+function fmtAt(iso){
+  return new Date(iso || Date.now()).toLocaleString('en-CA',{hour12: false}).replace(',', '')
+}
+function renderItem(dl, data, prepend){
+  const name = data.name || '?'
+  const dt = ne('dt')
+  dt.appendChild(ne('small', {$: fmtAt(data.at)}))
+  dt.appendChild(document.createTextNode(' '))
+  dt.appendChild(data.link ? ne('a', {href: data.link, $: name}) : ne('b', {$: name}))
+  const dd = ne('dd', {$: data.content})
+  if (prepend){
+    dl.insertBefore(dt, dl.firstChild)
+    dl.insertBefore(dd, dl.children[1])
+  } else {
+    dl.appendChild(dt)
+    dl.appendChild(dd)
+  }
+}
+
+async function post_cmt(evt) {
+  evt.preventDefault()
+  evt.stopPropagation()
+  const form = evt.target
+  const fd = new FormData(form)
+  let req, rsp = {}
+  try {
+    const t = form.dataset.t
+    const url = t ? `${form.action}?t=${encodeURIComponent(t)}` : form.action
+    req = await fetch(url, {
+      method: "POST", referrerPolicy: "unsafe-url",
+      headers: { Accept: "application/json" },
+      body: new URLSearchParams(fd)
+    })
+    rsp = await req.json()
+  } catch (e) {
+    console.info('[req4cmt] failed ' + e)
+    if (!req){
+      evt.submitter.value = '❌'
+      return
+    }
+  }
+  const is_ok = req.status == 200 && !rsp.error
+  evt.submitter.value = is_ok ? '✅' : '⚠️'
+  if (!is_ok) return
+  renderItem(form.querySelector('dl'), {
+    name: fd.get('x-name'), link: fd.get('x-link'),
+    content: fd.get('content'), at: Date.now()
+  }, true)
+  const ta = form.querySelector('textarea')
+  ta.value = ''
+  ta.placeholder = 'new comments will appear eventually.\n新评论将稍后刷新'
+  setTimeout(load_cmts, 3000, form)
+}
+
 async function load_cmts(form){
-  // load from github via CF
   let body
   try{
-    body = await (await fetch(form.action + '.jsonl', {headers: {"Accept": "application/x-ndjson"}})).text()
+    const rq = await fetch(form.action + '.jsonl', {headers: {Accept: "application/x-ndjson"}})
+    const ray = rq.headers.get('cf-ray')
+    if (ray) form.dataset.t = ray
+    body = await rq.text()
   } catch(e) {
     console.info('[req4cmt] failed ' + e)
     return
   }
   const dl = form.querySelector('dl')
-  dl.replaceChildren() // clear
+  dl.replaceChildren()
   body.split(/\r?\n/).reverse().forEach(line=>{
-      let data;
-      try{
-        data = JSON.parse(line)
-      } catch(e){
-        return
-      }
-      const dt = ne('dt')
-      dt.appendChild(ne('small', {$: new Date(data.at).toLocaleString(
-        'en-CA',{hour12: false}).replace(',', '')}))  // easy ISO format
-      dt.appendChild(document.createTextNode(' '))
-      if (data.link){
-        dt.appendChild(ne('a', {href: data.link, $: data.name}))
-      } else {
-        dt.appendChild(b = ne('b', {$: data.name}))
-      }
-      dl.appendChild(dt)
-      const dd = ne('dd', {$: data.content})
-      dl.appendChild(dd)
-    })
+    try{
+      renderItem(dl, JSON.parse(line))
+    } catch(e){}
+  })
 }
 
 async function init(){
@@ -109,16 +99,20 @@ async function init(){
   </dl>
   </form>
 </div>`)
-  const form = req4cmt_thread.querySelector('form');
+  const form = this.nextElementSibling.querySelector('form')
   form.addEventListener('submit', post_cmt)
   await load_cmts(form)
-  // add hidden inputs, avoid spam
   const submit = form.querySelector('input[type="submit"]')
   'name email link'.split(' ').forEach(k=>{
-    submit.insertAdjacentElement('beforebegin', ne('input', {name: `x-${k}`, placeholder: k}));
-    submit.insertAdjacentText('beforebegin', ' ');
+    submit.insertAdjacentElement('beforebegin', ne('input', {name: `x-${k}`, placeholder: k}))
+    submit.insertAdjacentText('beforebegin', ' ')
   })
 }
-document.addEventListener("DOMContentLoaded", init.bind(document.currentScript))
+const boot = init.bind(document.currentScript)
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', boot)
+} else {
+  boot()
+}
 
 })()
