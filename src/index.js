@@ -277,7 +277,7 @@ async function query_ray_time(env, ray) {
 				view: 'events',
 				limit: 5,
 				dry: true,
-				timeframe: { from: now - 24 * 3600 * 1000, to: now },
+				timeframe: { from: now - 1 * 3600 * 1000, to: now },
 				parameters: {
 					datasets: ['cloudflare-workers'],
 					filters: [{ key: '$metadata.requestId', operation: 'eq', type: 'string', value: id }],
@@ -285,7 +285,11 @@ async function query_ray_time(env, ray) {
 			}),
 			signal: AbortSignal.timeout(8000),
 		});
-		if (!rsp.ok) return `err:http-${rsp.status}`.slice(0, 50);
+		if (!rsp.ok) {
+			const body = await rsp.text().catch(() => '');
+			console.log('ray query failed', rsp.status, body.slice(0, 2000));
+			return `err:http-${rsp.status}:${body}`.slice(0, 300);
+		}
 		const j = await rsp.json().catch(() => null);
 		return find_first_timestamp(j) || 'miss';
 	} catch (ex) {
@@ -404,7 +408,7 @@ export default {  // Cloudflare Worker entry
 			email: (/([^@\s]+@[^@\s]+\.[^@\s]+)/.exec(form.get('x-email'))?.[1] || DEFAULT_EMAIL).slice(0, 200),
 			link: (form.get('x-link') || '').slice(0, 1024 * 4),  // 4k should be enough
 		}
-		console.log(page_url, info)
+		// console.log(page_url, info)
 		info.content = JSON.stringify({
 			name: info.name, link: info.link, at: new Date().toISOString(),
 			content: info.content
